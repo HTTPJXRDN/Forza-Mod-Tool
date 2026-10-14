@@ -2,15 +2,12 @@ using System.Buffers.Binary;
 using System.IO;
 using System.IO.Compression;
 using System.Security.Cryptography;
-using System.Text;
 
 namespace FH6LocalCryptoTool;
 
 /// <summary>FH6 C_ProfileData blob: CryptoContainer -> size header -> zlib -> save payload.</summary>
 public static class ProfileData
 {
-    private static readonly byte[] AccountBoundaryProperty = Encoding.ASCII.GetBytes("ActivationLocationSaveState");
-
     public static byte[] Decrypt(byte[] encrypted)
     {
         byte[] raw = ForzaZip.DecryptContainer(encrypted, Fh6Keys.Get("ProfileData").DataKey);
@@ -42,8 +39,8 @@ public static class ProfileData
 
     public static byte[] Swap(byte[] donorEncrypted, byte[] targetEncrypted)
     {
-        byte[] donorPayload = Decrypt(donorEncrypted);
-        byte[] targetPayload = Decrypt(targetEncrypted);
+        byte[] donorPayload = DecryptSwapInput(donorEncrypted, "Donor");
+        byte[] targetPayload = DecryptSwapInput(targetEncrypted, "Target");
         var donorAccount = LocateCanonicalAccount(donorPayload);
         var targetAccount = LocateCanonicalAccount(targetPayload);
 
@@ -51,6 +48,9 @@ public static class ProfileData
         BinaryPrimitives.WriteUInt64LittleEndian(swappedPayload.AsSpan(donorAccount.Offset, 8), targetAccount.Xuid);
 
         byte[] swapped = Encrypt(swappedPayload, targetEncrypted);
+        var key = Fh6Keys.Get("ProfileData");
+        if (!ForzaZip.ValidateContainer(swapped, key.DataKey, key.MacKey, out _))
+            throw new CryptographicException("Swapped save failed container authentication.");
         byte[] check = Decrypt(swapped);
         if (!check.AsSpan().SequenceEqual(swappedPayload)) throw new CryptographicException("Swapped save failed payload verification.");
         if (LocateCanonicalAccount(check).Xuid != targetAccount.Xuid) throw new CryptographicException("Swapped save failed account verification.");
@@ -59,21 +59,41 @@ public static class ProfileData
 
     private static (int Offset, ulong Xuid) LocateCanonicalAccount(byte[] payload)
     {
-        var candidates = new List<(int Offset, ulong Xuid)>();
-        for (int nameOffset = 12; nameOffset <= payload.Length - AccountBoundaryProperty.Length; nameOffset++)
+        // Account identity belongs to the binary career section's header, not to
+        // any record. ActivationLocationSaveState need not be the first record.
+        // Parse the complete framed section and require an exact round trip;
+        // never guess an account field from a matching name elsewhere in a save.
+        var container = ProfileContainer.Parse(payload);
+        byte[] binary = container.Sections[ProfileContainer.BinaryIndex].Payload;
+        BinaryCareer career;
+        try
         {
-            if (payload[nameOffset] != AccountBoundaryProperty[0]) continue;
-            if (!payload.AsSpan(nameOffset, AccountBoundaryProperty.Length).SequenceEqual(AccountBoundaryProperty)) continue;
-            if (BinaryPrimitives.ReadInt32LittleEndian(payload.AsSpan(nameOffset - 4, 4)) != AccountBoundaryProperty.Length) continue;
-
-            int xuidOffset = nameOffset - 12;
-            ulong xuid = BinaryPrimitives.ReadUInt64LittleEndian(payload.AsSpan(xuidOffset, 8));
-            if (xuid is >= 100_000_000_000_000UL and <= 9_999_999_999_999_999UL)
-                candidates.Add((xuidOffset, xuid));
+            career = BinaryCareer.Parse(binary, hasXuid: true);
+        }
+        catch (Exception ex) when (ex is InvalidDataException or ArgumentException or OverflowException)
+        {
+            throw new InvalidDataException("ProfileData career account header could not be safely parsed. No swapped save was written.", ex);
         }
 
-        if (candidates.Count != 1)
-            throw new InvalidDataException($"ProfileData canonical account field was not uniquely identified ({candidates.Count} candidates). No swapped save was written.");
-        return candidates[0];
+        if (!career.RoundTripsCleanly(binary) ||
+            career.Xuid is < 100_000_000_000_000UL or > 9_999_999_999_999_999UL)
+            throw new InvalidDataException("ProfileData career account header is invalid or unsupported. No swapped save was written.");
+
+        int xuidOffset = 0;
+        for (int index = 0; index < ProfileContainer.BinaryIndex; index++)
+            xuidOffset = checked(xuidOffset + 8 + container.Sections[index].Payload.Length);
+        // Binary section frame [marker, size], then [recordCount, account XUID].
+        xuidOffset = checked(xuidOffset + 8 + 4);
+        if (BinaryPrimitives.ReadUInt64LittleEndian(payload.AsSpan(xuidOffset, 8)) != career.Xuid)
+            throw new InvalidDataException("ProfileData career account offset failed verification. No swapped save was written.");
+        return (xuidOffset, career.Xuid);
+    }
+
+    private static byte[] DecryptSwapInput(byte[] encrypted, string label)
+    {
+        var key = Fh6Keys.Get("ProfileData");
+        if (!ForzaZip.ValidateContainer(encrypted, key.DataKey, key.MacKey, out _))
+            throw new InvalidDataException($"{label} is not an authenticated encrypted FH6 C_ProfileData save. No swapped save was written.");
+        return Decrypt(encrypted);
     }
 }

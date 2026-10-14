@@ -9,7 +9,7 @@ using System.Runtime.ExceptionServices;
 
 namespace FH6LocalCryptoTool;
 
-/// <summary>FM2023 TransformIT GameDB codec. Uses data-only, verified offline tables;
+/// <summary>FM8 TransformIT GameDB codec. Uses data-only, verified offline tables;
 /// never attaches to the game, executes captured code, or modifies an input file.</summary>
 public static class MotorsportGameDb
 {

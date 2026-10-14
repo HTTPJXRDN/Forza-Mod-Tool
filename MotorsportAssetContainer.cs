@@ -4,7 +4,7 @@ using System.Security.Cryptography;
 
 namespace FH6LocalCryptoTool;
 
-/// <summary>FM2023 General text assets: authenticated 32-byte header and
+/// <summary>FM8 General text assets: authenticated 32-byte header and
 /// 512-byte data/16-byte MAC slots. Not the GameDB or CMS archive codec.</summary>
 public static class MotorsportAssetContainer
 {

@@ -133,6 +133,7 @@ public static partial class Merge
                    { DataSource = partial, Pooling = false }.ToString()))
             {
                 con.Open();
+                string versionInfo = MergeVersionInfo.Capture(con);
                 Exec(con, "PRAGMA foreign_keys=OFF;");
                 Exec(con, $"ATTACH DATABASE '{SqlPath(preview.DonorPath)}' AS ov;");
                 var previousForeignKeys = ForeignKeyIssues(con);
@@ -250,6 +251,7 @@ public static partial class Merge
                         written += CopyIdRow(con, tx, columnsCache, "List_AeroPhysics", "AeroPhysicsID", id,
                                              overrideConflicts: overrideConflicts);
 
+                    MergeVersionInfo.VerifyPreserved(con, versionInfo, tx);
                     tx.Commit();
                 }
                 using (var check = con.CreateCommand())

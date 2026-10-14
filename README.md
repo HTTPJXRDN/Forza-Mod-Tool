@@ -2,7 +2,7 @@
 
 Forza Mod Tool brings FH6 and FM8 crypto, car, animation, save-swap, profile, garage, and database tools together in one application. Save/profile and Garage Viewer features are FH6-only.
 
-Download and extract `FH6LocalModTool_v1.2.6.zip` from the release assets.
+Download and extract `FH6LocalModTool_v1.2.6.2.zip` from the release assets. See [what changed since 1.2.6.1](CHANGELOG.md).
 
 ## Table of contents
 
@@ -40,7 +40,8 @@ Download and extract `FH6LocalModTool_v1.2.6.zip` from the release assets.
 - Open and export an encrypted `.slt` directly in Car Editor; SQLite remains supported.
 - Selectively merge `.slt` or SQLite databases, including mixed-format inputs.
 - Select exactly which donor database tables and rows are merged into the staged database.
-- Export the selected car's related database rows and import that donor through **Import car DB**, with an optional conflict override.
+- Export one car or a Ctrl/Shift-selected car pack into one related-row donor DB. Import normally or use **Drop & rebuild** to replace the donor cars' existing mods.
+- Keep the receiving GameDB's version metadata unchanged during normal merges/imports; only **Merge updated DB** advances it.
 - Carry additions, edits and deliberate deletions onto a clean updated database through **Merge updated DB**, using a version-matched clean baseline.
 - Edit car availability, prices, engines, motors, fitment, wheelbase, drivetrains, tires, suspension, handling, and per-engine power settings.
 - Batch-edit multiple cars with append-only, duplicate-safe upgrade creation.
@@ -50,6 +51,7 @@ Download and extract `FH6LocalModTool_v1.2.6.zip` from the release assets.
 - Apply the animation-side database stance compatibility fix and access experimental non-door channels.
 - Build ProfileData save swaps while retaining the target save's container framing and canonical account XUID.
 - Edit supported ProfileData values through a friendly Overview while retaining advanced SQLite, property-tree, Save State, Career, and XML views.
+- Discover all roads, unlock save-managed clothes and horns, and complete Collection Journal challenges with automatic points, bonuses and Festival wristband progression.
 - Browse your FH6 garage by manufacturer with friendly car names and actual per-instance cached thumbnails.
 - Add stock cars, duplicate an instance, remove selected cars, and set the current car in a private save working copy.
 - Edit Original Owner, Distance Driven, and Top Speed individually or in batches, changing only the fields you select.
@@ -73,7 +75,7 @@ The release executable supports Windows 10/11 x64 and does not require a separat
 
 ## Start here: a beginner's guide
 
-Download and extract `FH6LocalModTool_v1.2.6.zip` from the release assets, then run **FH6ModStudio.exe**. Keep `acl_compressor.exe`, `forzatech_acl.dll`, and the included `licenses` folder beside the executable. If building from source, run the resulting `FH6ModStudio.exe` instead.
+Download and extract `FH6LocalModTool_v1.2.6.2.zip` from the release assets, then run **FH6ModStudio.exe**. Keep `acl_compressor.exe`, `forzatech_acl.dll`, and the included `licenses` folder beside the executable. If building from source, run the resulting `FH6ModStudio.exe` instead.
 
 The tool has seven tabs:
 
@@ -317,12 +319,12 @@ Supported FH6 ZIP workspaces can also be rebuilt: edit the extracted files, drop
 
 1. Finish editing the car and export your modified GameDB from Car Editor.
 2. Drop that modified `.slt` or `.sqlite` into Crypto's large top area.
-3. Click **Export Car Related DB**, select one car, and save the donor `.sqlite`.
+3. Click **Export Car Related DB**, select one car or Ctrl/Shift-click several, and save one combined donor `.sqlite`.
 4. Share that donor with your car mod. It contains the car's related stock and modified rows, including bodies, parts, fitment, upgrades, presets, and linked engine/motor/physics records. It is a merge donor, not a GameDB to install or re-encrypt directly.
 5. To install it, put the receiving full GameDB in the top area and the exported car donor in the lower merge area.
-6. Click **Import car DB**. Enable **Use donor values for conflicting rows of this car** if you want the donor to replace the receiving DB's matching rows, then confirm to write a new output.
+6. Click **Import car DB**. Enable **Use donor values for conflicting rows** to replace matching rows. For a fresh replacement of those cars' current mods, tick **Drop & rebuild**, then confirm to write a new output.
 
-The result follows the receiving DB's format: `.slt` in produces an encrypted `.slt`, and SQLite in produces SQLite. Shared engine or physics records can also affect other cars using them. The general **Merge** button remains available for manual table and row selection. See the [advanced merge reference](#merge-another-database) for details.
+The result follows the receiving DB's format: `.slt` in produces an encrypted `.slt`, and SQLite in produces SQLite. Car donors do not carry `VersionInfo`; ordinary merges/imports preserve the receiving DB's version metadata. **Drop & rebuild** removes only the donor cars' related rows, not whole tables, and blocks conflicting shared records used by unselected cars. Normal conflict overrides can affect other cars through shared engine/physics records. The general **Merge** button remains available for manual table and row selection. See the [advanced merge reference](#merge-another-database) for details.
 
 ### Merge after a game update
 
@@ -688,6 +690,30 @@ Festival Playlist controls keep Current Season points separate from lifetime Pla
 Recognized Horizon Collection categories are shown as separate progress values:
 
 ![Horizon Collection progress controls](Screenshots/profile-editor-collection-progress.png)
+
+### Roads, clothes and horns
+
+In **Overview**, use **Discover all roads**, **Unlock all clothes**, or **Unlock all horns**, then **Save edited** to export a separate file.
+
+- Roads fills the supported FH6 discovery map and sets the saved road count to **671 / 671**.
+- Clothes covers **498 save-managed wardrobe items** across all clothing/accessory categories. The two VIP-managed items keep their existing states.
+- Horns adds missing entries from the **184-horn catalog**, keeping your equipped horn.
+
+These features have been confirmed working in-game by the project owner. They do not grant VIP/DLC ownership, change your equipped outfit, claim rewards, or install a save automatically. Keep a full save backup.
+
+![Profile Editor roads, clothes and horns controls](Screenshots/profile-editor-unlocks-v1.2.6.2.png)
+
+### Collection Journal
+
+Select challenge rows, then click **Complete selected challenges**. Use **Ctrl-click** for several or **Ctrl+A** for every listed row. Clear campaign/category/search filters to select the full journal.
+
+Points, eligible category bonuses and Festival wristbands update automatically. The Done/Auto bonus tickboxes show status; select the rows rather than trying to toggle those indicators. Ctrl+A can include bonus rows without awarding them directly or triggering an error. Repeating an already completed selection does not add points twice.
+
+The journal editor covers **2,855 mapped challenges** across Horizon Festival and Discover Japan. Their points stay separate; Festival points control the wristband. It changes local journal progress, not actual photos, garage cars, online times or reward-claim history. Discovery stamp/access fields are preserved. Availability can differ from the installed catalog, so only complete entries appropriate to your save.
+
+![Collection Journal challenge selection](Screenshots/profile-editor-journal-v1.2.6.2.png)
+
+The project owner has confirmed journal completion and automatic progression working in-game. Confirmations and errors now use the app's dark/pink theme, with the backup warning retained.
 
 ### Advanced views
 

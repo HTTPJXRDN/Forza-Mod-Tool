@@ -376,11 +376,13 @@ public partial class MainWindow : Window
             var cars = await Task.Run(() => CarRelatedDbExport.ListCars(sourceDb.SqlitePath));
             if (cars.Count == 0) throw new InvalidOperationException("No cars were found in the staged database.");
             var picker = new CarRelatedExportWindow(src, cars) { Owner = this };
-            if (picker.ShowDialog() != true || picker.SelectedCarId is not long carId)
+            if (picker.ShowDialog() != true || picker.SelectedCarIds.Count == 0)
             {
                 Status("Car-related export cancelled.");
                 return;
             }
+            var carIds = picker.SelectedCarIds;
+            string carLabel = carIds.Count == 1 ? $"car {carIds[0]}" : $"{carIds.Count:n0} cars";
             var save = new SaveFileDialog
             {
                 Title = "Save car-related merge donor",
@@ -388,7 +390,7 @@ public partial class MainWindow : Window
                 DefaultExt = ".sqlite",
                 AddExtension = true,
                 InitialDirectory = OutputDirFor(src),
-                FileName = $"car-{carId}.related.sqlite",
+                FileName = carIds.Count == 1 ? $"car-{carIds[0]}.related.sqlite" : $"cars-{carIds.Count}.related.sqlite",
                 OverwritePrompt = false
             };
             if (save.ShowDialog(this) != true)
@@ -399,10 +401,11 @@ public partial class MainWindow : Window
             if (File.Exists(save.FileName))
                 throw new IOException("That output file already exists. Please choose a new name; no file was overwritten.");
             sourceDb.VerifySourceUnchanged();
-            Status($"Exporting all related rows for car {carId}...");
-            Log($"Exporting all related rows for car {carId} from {Path.GetFileName(src)}...");
-            var result = await Task.Run(() => CarRelatedDbExport.Export(sourceDb.SqlitePath, carId, save.FileName));
-            Log($"Created single-car donor: {Path.GetFileName(result.Path)} ({result.Rows:n0} rows in {result.Tables} tables).");
+            Status($"Exporting all related rows for {carLabel}...");
+            Log($"Exporting all related rows for {carLabel} from {Path.GetFileName(src)}...");
+            var result = await Task.Run(() => CarRelatedDbExport.Export(sourceDb.SqlitePath, carIds, save.FileName));
+            sourceDb.VerifySourceUnchanged();
+            Log($"Created donor for {carIds.Count:n0} car(s): {Path.GetFileName(result.Path)} ({result.Rows:n0} rows in {result.Tables} tables).");
             foreach (string warning in result.Warnings) Log("    " + warning);
             Log("Drop this .sqlite in the merge donor zone and click Import car DB. It is not game-ready by itself.");
             Done(result.Path, "Car-related donor exported.");
@@ -505,17 +508,15 @@ public partial class MainWindow : Window
 
     private async Task DecryptFlow(string sltPath)
     {
+        var format = GameDbSqliteBridge.DetectFormat(sltPath);
         Status($"Decrypting {Path.GetFileName(sltPath)}…");
         string outPath = UniqueOutputPath(Path.Combine(
             OutputDirFor(sltPath),
             Path.GetFileNameWithoutExtension(sltPath) + ".decrypted.sqlite"));
-        var format = await Task.Run(() =>
+        await Task.Run(() =>
         {
             using var materialized = GameDbSqliteBridge.Materialize(sltPath, allowMotorsport: true);
-            if (materialized.TemplateSlt is null)
-                throw new InvalidDataException("This is already a valid SQLite database; use Re-encrypt instead.");
             File.Copy(materialized.SqlitePath, outPath);
-            return materialized.Format;
         });
 
         _templateSlt = sltPath;
@@ -547,11 +548,9 @@ public partial class MainWindow : Window
         string outPath = UniqueOutputPath(Path.Combine(
             OutputDirFor(sqlitePath),
             stem + ".re-encrypted.slt"));
-        var format = await Task.Run(() =>
-        {
-            GameDbSqliteBridge.EncryptSnapshot(sqlitePath, template, outPath, allowMotorsport: true);
-            return GameDbContainerFormat.Detect(template);
-        });
+        await Task.Run(() => GameDbSqliteBridge.EncryptSnapshot(sqlitePath, template, outPath, allowMotorsport: true));
+
+        var format = GameDbSqliteBridge.DetectFormat(template);
         Log($"Re-encrypted [{GameDbContainerFormat.DisplayName(format)}]  {Path.GetFileName(sqlitePath)}  ->  {Path.GetFileName(outPath)}");
         Log($"    template: {Path.GetFileName(template)}");
         Log($"    {new FileInfo(sqlitePath).Length:n0} -> {new FileInfo(outPath).Length:n0} bytes.  Copy it into the game as the matching GameDB .slt.");
@@ -925,20 +924,22 @@ public partial class MainWindow : Window
         if (string.Equals(Path.GetFullPath(basePath), Path.GetFullPath(donorPath), StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Base and donor must be different files.");
 
-        Status("Preparing single-car import...");
+        Status("Preparing car DB import...");
         using var baseDb = await Task.Run(() => GameDbSqliteBridge.Materialize(basePath));
         using var donorDb = await Task.Run(() => GameDbSqliteBridge.Materialize(donorPath));
-        var car = await Task.Run(() => CarRelatedDbExport.ReadSingleCarDonor(donorDb.SqlitePath));
-        Status($"Comparing car {car.Id} rows...");
+        var cars = await Task.Run(() => CarRelatedDbExport.ReadCarDonor(donorDb.SqlitePath));
+        var carIds = cars.Select(c => c.Id).ToArray();
+        string carLabel = cars.Count == 1 ? $"car {cars[0].Id}" : $"{cars.Count:n0} cars";
+        Status($"Comparing rows for {carLabel}...");
         var preview = await Task.Run(() => Merge.PreviewMods(baseDb.SqlitePath, donorDb.SqlitePath));
         if (preview.Warnings.Count > 0)
             throw new InvalidDataException("Some donor tables could not be compared; import stopped to avoid a partial car: " +
                                            string.Join("; ", preview.Warnings.Take(3)));
-        var picker = new CarRelatedImportWindow(car, preview, basePath, donorPath) { Owner = this };
+        var picker = new CarRelatedImportWindow(cars, preview, basePath, donorPath) { Owner = this };
         if (picker.ShowDialog() != true) { Status("Car import cancelled."); return; }
         var selected = preview.Tables.SelectMany(t => t.Rows)
             .Where(r => picker.ReplaceConflicts || !r.IsConflict).ToArray();
-        if (selected.Length == 0)
+        if (selected.Length == 0 && !picker.RebuildCar)
         {
             Log("No new or selected conflicting rows to import; the base already has these rows.");
             Status("No car changes to import.");
@@ -946,7 +947,8 @@ public partial class MainWindow : Window
         }
 
         bool sltOutput = GameDbSqliteBridge.IsSlt(basePath);
-        string stem = Path.GetFileNameWithoutExtension(basePath) + ".carmerge." + car.Id + "." +
+        string carSuffix = cars.Count == 1 ? cars[0].Id.ToString() : cars.Count + "-cars";
+        string stem = Path.GetFileNameWithoutExtension(basePath) + (picker.RebuildCar ? ".carrebuild." : ".carmerge.") + carSuffix + "." +
                       DateTime.Now.ToString("yyyyMMdd-HHmmss");
         string outPath = UniqueOutputPath(Path.Combine(OutputDirFor(basePath), stem + (sltOutput ? ".slt" : ".sqlite")));
         string sqliteOutput = sltOutput
@@ -956,9 +958,17 @@ public partial class MainWindow : Window
             ? new GameDbSqliteBridge.MaterializedDatabase(sqliteOutput, null, true) : null;
         baseDb.VerifySourceUnchanged();
         donorDb.VerifySourceUnchanged();
-        Status($"Importing {selected.Length:n0} rows for car {car.Id}...");
-        int written = await Task.Run(() => Merge.RunSelected(preview, selected, sqliteOutput,
-            msg => Dispatcher.Invoke(() => Log("    " + msg))));
+        Status(picker.RebuildCar ? $"Rebuilding {carLabel} from donor..." : $"Importing {selected.Length:n0} rows for {carLabel}...");
+        Action<string> importLog = msg => Dispatcher.Invoke(() => Log("    " + msg));
+        int written;
+        if (picker.RebuildCar)
+        {
+            var rebuilt = await Task.Run(() => Merge.RebuildCars(preview, carIds, sqliteOutput, importLog));
+            written = rebuilt.InsertedRows;
+            Log($"Removed {rebuilt.RemovedRows:n0} old car-related row(s); inserted {written:n0} donor row(s).");
+        }
+        else
+            written = await Task.Run(() => Merge.RunSelected(preview, selected, sqliteOutput, importLog));
         if (sltOutput)
         {
             baseDb.VerifySourceUnchanged();
@@ -970,8 +980,8 @@ public partial class MainWindow : Window
         if (sltOutput) { _templateSlt = outPath; TemplateText.Text = outPath; }
         StagedText.Text = $"Staged: {Path.GetFileName(outPath)}";
         StagedText.Visibility = Visibility.Visible;
-        Log($"Imported {written:n0} row(s) for car {car.Id} into {Path.GetFileName(outPath)}.");
-        Done(outPath, "Car DB import complete.");
+        Log($"Imported {written:n0} row(s) for {carLabel} into {Path.GetFileName(outPath)}.");
+        Done(outPath, picker.RebuildCar ? "Car DB rebuild complete." : "Car DB import complete.");
     }
 
     private string UniqueMergeOutput(string baseDb, string extension)
@@ -1105,7 +1115,14 @@ public partial class MainWindow : Window
 
     private static bool IsSqlite(string path)
     {
-        return GameDbSqliteBridge.IsSqliteDatabase(path);
+        try
+        {
+            using var fs = File.OpenRead(path);
+            Span<byte> hdr = stackalloc byte[16];
+            int n = fs.Read(hdr);
+            return n >= 15 && System.Text.Encoding.ASCII.GetString(hdr[..15].ToArray()) == "SQLite format 3";
+        }
+        catch { return false; }
     }
 
     private static bool IsSkeld(string path) =>

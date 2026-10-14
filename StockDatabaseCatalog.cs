@@ -35,7 +35,7 @@ public static class StockDatabaseCatalog
     private static IReadOnlyList<string> ExtractReferences()
     {
         var assembly = Assembly.GetExecutingAssembly();
-        string directory = Path.Combine(Path.GetTempPath(), "FH6LocalCryptoTool", "stockrefs-" + Environment.ProcessId);
+        string directory = Path.Combine(FH6LocalCryptoTool.TempWorkspace.Root, "FH6LocalCryptoTool", "stockrefs-" + Environment.ProcessId);
         Directory.CreateDirectory(directory);
         var paths = new List<string>();
         foreach (string name in assembly.GetManifestResourceNames().Where(n =>

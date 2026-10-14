@@ -107,6 +107,9 @@ public static partial class Merge
         var baseTables = TableNames(con, "main");
         foreach (string table in TableNames(con, "ov").OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
         {
+            // Build metadata belongs to the destination, not to a car/mod donor.
+            // Only the dedicated updated-DB workflow may advance it.
+            if (MergeVersionInfo.IsProtectedTable(table)) continue;
             bool isNew = !baseTables.Contains(table);
             var overlayColumns = ColumnNames(con, "ov", table);
             var baseColumns = isNew ? overlayColumns : ColumnNames(con, "main", table);
@@ -237,6 +240,10 @@ public static partial class Merge
     {
         var selected = selectedRows.Distinct().ToList();
         var replacementNames = new HashSet<string>(replaceTables, StringComparer.OrdinalIgnoreCase);
+        // Also protect callers holding an older preview, including whole-table replacement.
+        bool ignoredVersion = selected.RemoveAll(r => MergeVersionInfo.IsProtectedTable(r.Table)) > 0;
+        ignoredVersion |= replacementNames.RemoveWhere(MergeVersionInfo.IsProtectedTable) > 0;
+        if (ignoredVersion) log?.Invoke("VersionInfo: donor metadata ignored; the base DB version is retained.");
         if (selected.Count == 0 && replacementNames.Count == 0)
             throw new InvalidOperationException("Select at least one donor row or table replacement.");
         var known = preview.Tables.SelectMany(t => t.Rows).ToHashSet();
@@ -269,6 +276,7 @@ public static partial class Merge
                    { DataSource = partial, Pooling = false }.ToString()))
             {
                 con.Open();
+                string versionInfo = MergeVersionInfo.Capture(con);
                 Exec(con, "PRAGMA foreign_keys=OFF;");
                 using (var foreignKeys = con.CreateCommand())
                 {
@@ -281,6 +289,7 @@ public static partial class Merge
                 {
                     foreach (var table in preview.Tables)
                     {
+                        if (MergeVersionInfo.IsProtectedTable(table.Name)) continue;
                         if (replacementNames.Contains(table.Name))
                         {
                             var rebuilt = RebuildTableFromDonor(con, tx, table);
@@ -309,6 +318,7 @@ public static partial class Merge
                         }
                         log?.Invoke($"{table.Name}: {chosen.Count} selected, {written} total row(s) written");
                     }
+                    MergeVersionInfo.VerifyPreserved(con, versionInfo, tx);
                     tx.Commit();
                     using var check = con.CreateCommand(); check.CommandText = "PRAGMA quick_check;";
                     if (!string.Equals(Convert.ToString(check.ExecuteScalar()), "ok", StringComparison.OrdinalIgnoreCase))

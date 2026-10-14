@@ -1,6 +1,8 @@
 # Third-party credits and notices
 
 ## Redistributed components
+- BCnEncoder.NET 2.3.0: Nomi Lakkala / Nominom, MIT; LICENSE-BCnEncoder.NET.txt. Used for in-memory BC7 stock-thumbnail decoding. https://github.com/Nominom/BCnEncoder.NET
+- CommunityToolkit.HighPerformance 8.4.0: .NET Foundation and contributors, MIT; LICENSE-CommunityToolkit.HighPerformance.txt. BCnEncoder dependency. https://github.com/CommunityToolkit/dotnet
 - Microsoft .NET / WPF: .NET Foundation and contributors, MIT; accompanying LICENSE-DOTNET/WPF and runtime THIRD-PARTY-NOTICES texts.
 - Microsoft.Data.Sqlite 8.0.8: Microsoft / .NET Foundation, MIT; LICENSE-Microsoft.Data.Sqlite.txt.
 - SQLitePCLRaw 2.1.6: Eric Sink / SourceGear, LLC, Apache-2.0; LICENSE-SQLitePCLRaw.txt. Upstream assemblies are unmodified.

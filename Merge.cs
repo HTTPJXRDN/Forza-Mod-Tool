@@ -12,17 +12,16 @@ namespace FH6LocalCryptoTool;
 ///   * AddOnly (default) — the BASE wins. Every row already in the base is left
 ///     exactly as it is; only rows the overlay has that the base does NOT are
 ///     inserted. Nothing you changed is ever overwritten or deleted. This is the
-///     right mode for pulling the new cars/parts out of a game update onto your
-///     modded DB without reverting any of your work.
+///     right mode for adding donor parts without reverting existing work. Use
+///     Merge Updated DB, not this routine, to migrate to a new game build.
 ///
 ///   * OverlayWins — the OVERLAY wins. Wherever it has a row (matched by primary
 ///     key), that row's values overwrite the base's, and rows the overlay adds are
 ///     inserted. Use this when the overlay is a small DB holding only your changed
 ///     rows and you want it applied onto a fresh stock DB.
 ///
-/// A short list of "force overlay" tables (default: VersionInfo) is always taken
-/// wholesale from the overlay in AddOnly mode — the DB version stamp must match the
-/// game build even though every other row stays yours.
+/// VersionInfo is always retained from the base, regardless of merge mode or
+/// caller-selected/forced tables. Only Merge Updated DB advances the build stamp.
 ///
 /// Sources, chosen by the overlay's extension:
 ///   * .sql     -> copy base to out, run the SQL script (mode is ignored).
@@ -43,8 +42,8 @@ public enum MergeMode { AddOnly, OverlayWins }
 
 public static partial class Merge
 {
-    // Tables whose rows are always taken wholesale from the overlay in AddOnly mode.
-    public static readonly string[] DefaultForceOverlayTables = { "VersionInfo" };
+    // Retained for API compatibility; no metadata is forced from ordinary donors.
+    public static readonly string[] DefaultForceOverlayTables = Array.Empty<string>();
 
     public static void Run(string baseSqlite, string overlay, string outSqlite,
                            string[]? tables, Action<string>? log = null,
@@ -84,6 +83,9 @@ public static partial class Merge
                               Action<string>? log, MergeMode mode, HashSet<string> force,
                               HashSet<string> keepBase, bool preserveKeylessNewRows)
     {
+        string versionInfo = MergeVersionInfo.Capture(con);
+        // Mandatory protection wins over all caller options, including force-overlay.
+        keepBase.Add("VersionInfo");
         if (overlay.EndsWith(".sql", StringComparison.OrdinalIgnoreCase))
         {
             string sql = File.ReadAllText(overlay);
@@ -94,6 +96,7 @@ public static partial class Merge
                 cmd.CommandText = sql;
                 cmd.ExecuteNonQuery();
             }
+            MergeVersionInfo.VerifyPreserved(con, versionInfo, tx);
             tx.Commit();
             log?.Invoke($"applied SQL patch: {Path.GetFileName(overlay)}");
             return;
@@ -151,8 +154,8 @@ public static partial class Merge
                 string colList = string.Join(", ", cols.Select(Q));
                 int rows;
 
-                // Force tables (e.g. VersionInfo): always take the overlay's rows wholesale,
-                // even in add-only mode, so the DB version matches the game build.
+                // Caller-selected nonmetadata tables may be replaced wholesale.
+                // VersionInfo is excluded before reaching this branch.
                 if (mode == MergeMode.AddOnly && force.Contains(t))
                 {
                     Exec(con, $"DELETE FROM main.{Q(t)};", tx);
@@ -225,6 +228,7 @@ public static partial class Merge
                 totalRows += rows;
                 tableCount++;
             }
+            MergeVersionInfo.VerifyPreserved(con, versionInfo, tx);
             tx.Commit();
         }
 

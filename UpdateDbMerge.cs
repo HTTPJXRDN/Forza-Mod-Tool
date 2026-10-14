@@ -1,5 +1,6 @@
 using System.IO;
 using System.Security.Cryptography;
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 
 namespace FH6LocalCryptoTool;
@@ -82,9 +83,10 @@ public static class UpdateDbMerge
                 var original = ForeignKeyCounts(updated); var donor = ForeignKeyCounts(modded);
                 // Donor-added rows may use a looser schema than the official clean DB.
                 var excess = result.Where(r => r.Value > original.GetValueOrDefault(r.Key) + donor.GetValueOrDefault(r.Key) +
-                    preview.AddedByTable.GetValueOrDefault(r.Key.Split(':')[0])).ToArray();
+                    preview.AddedByTable.GetValueOrDefault(r.Key.ChildTable)).ToArray();
                 if (excess.Length > 0)
-                    throw new InvalidDataException("New foreign-key warnings after applying changes/deletions: " + string.Join(", ", excess.Take(5).Select(r => r.Key)));
+                    throw new InvalidDataException("New foreign-key warnings after applying changes/deletions: " +
+                        string.Join(", ", excess.Take(5).Select(r => $"{r.Key.ChildTable}:{r.Key.ParentTable} {r.Key.Columns}")));
                 GameDbDelta.Exec(db, "DETACH DATABASE ov"); GameDbDelta.Exec(db, "DETACH DATABASE old");
             }
             Verify(preview);
@@ -110,11 +112,55 @@ public static class UpdateDbMerge
         if (File.Exists(path + "-wal")) { using var wal = File.OpenRead(path + "-wal"); result += ":" + Convert.ToHexString(SHA256.HashData(wal)); }
         return result;
     }
-    private static Dictionary<string, int> ForeignKeyCounts(SqliteConnection db)
+    private sealed record ForeignKeyIdentity(string ChildTable, string ParentTable, string Columns);
+
+    private static Dictionary<ForeignKeyIdentity, int> ForeignKeyCounts(SqliteConnection db)
     {
-        var result = new Dictionary<string, int>(); using var cmd = db.CreateCommand(); cmd.CommandText = "PRAGMA main.foreign_key_check";
-        using var reader = cmd.ExecuteReader();
-        while (reader.Read()) { string key = $"{reader.GetValue(0)}:{reader.GetValue(2)}:{reader.GetValue(3)}"; result[key] = result.GetValueOrDefault(key) + 1; }
+        // SQLite's fkid is only an index into this database's FK declarations.
+        // Reordering identical declarations changes it; compare the actual
+        // child/parent column mapping instead, including composite constraints.
+        var counts = new Dictionary<(string Table, int Id), int>();
+        using (var cmd = db.CreateCommand())
+        {
+            cmd.CommandText = "PRAGMA main.foreign_key_check";
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                var key = (reader.GetString(0), reader.GetInt32(3));
+                counts[key] = counts.GetValueOrDefault(key) + 1;
+            }
+        }
+        var result = new Dictionary<ForeignKeyIdentity, int>();
+        foreach (var table in counts.Keys.Select(k => k.Table).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var definitions = new Dictionary<int, (string Parent, List<string[]> Columns)>();
+            using (var cmd = db.CreateCommand())
+            {
+                cmd.CommandText = $"PRAGMA main.foreign_key_list(\"{table.Replace("\"", "\"\"")}\")";
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read())
+                {
+                    int id = reader.GetInt32(0);
+                    if (!definitions.TryGetValue(id, out var definition))
+                        definition = (reader.GetString(2), new List<string[]>());
+                    definition.Columns.Add(new[]
+                    {
+                        reader.GetString(3).ToUpperInvariant(),
+                        reader.IsDBNull(4) ? "<PARENT_PRIMARY_KEY>" : reader.GetString(4).ToUpperInvariant()
+                    });
+                    definitions[id] = definition;
+                }
+            }
+            foreach (var warning in counts.Where(k => k.Key.Table.Equals(table, StringComparison.OrdinalIgnoreCase)))
+            {
+                if (!definitions.TryGetValue(warning.Key.Id, out var definition))
+                    throw new InvalidDataException($"Cannot identify a foreign-key constraint in {table}; merge validation stopped.");
+                var key = new ForeignKeyIdentity(table.ToUpperInvariant(), definition.Parent.ToUpperInvariant(),
+                    JsonSerializer.Serialize(definition.Columns.OrderBy(p => p[0], StringComparer.Ordinal)
+                        .ThenBy(p => p[1], StringComparer.Ordinal)));
+                result[key] = result.GetValueOrDefault(key) + warning.Value;
+            }
+        }
         return result;
     }
 }

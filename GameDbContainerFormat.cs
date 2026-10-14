@@ -4,8 +4,8 @@ using System.IO;
 namespace FH6LocalCryptoTool;
 
 /// <summary>
-/// Structural routing candidates only. Callers must decrypt and validate the
-/// SQLite payload before accepting an encrypted database or template.
+/// Structural GameDB container detection. Encryption is selected from the
+/// container layout instead of assuming every .slt belongs to FH6.
 /// </summary>
 public static class GameDbContainerFormat
 {
@@ -35,8 +35,9 @@ public static class GameDbContainerFormat
 
     public static Kind Detect(long length, ReadOnlySpan<byte> header)
     {
-        // An encrypted container can inherit a SQLite-looking IV/header from an
-        // older template. Its framing must not be hidden by that signature.
+        if (header.Length >= 16 && header[..16].SequenceEqual("SQLite format 3\0"u8))
+            return Kind.Sqlite;
+
         long fh6Payload = length - Fh6HeaderSize;
         if (fh6Payload >= SlotSize && fh6Payload % SlotSize == 0)
             return Kind.Fh6Aes36;
@@ -44,9 +45,6 @@ public static class GameDbContainerFormat
         long motorsportPayload = length - MotorsportHeaderSize;
         if (motorsportPayload >= SlotSize && motorsportPayload % SlotSize == 0)
             return Kind.ForzaMotorsportTransformIt32;
-
-        if (header.Length >= 16 && header[..16].SequenceEqual("SQLite format 3\0"u8))
-            return Kind.Sqlite;
 
         return Kind.Unknown;
     }
