@@ -699,7 +699,7 @@ In **Overview**, use **Discover all roads**, **Unlock all clothes**, or **Unlock
 - Clothes covers **498 save-managed wardrobe items** across all clothing/accessory categories. The two VIP-managed items keep their existing states.
 - Horns adds missing entries from the **184-horn catalog**, keeping your equipped horn.
 
-These features have been confirmed working in-game by the project owner. They do not grant VIP/DLC ownership, change your equipped outfit, claim rewards, or install a save automatically. Keep a full save backup.
+These features do not grant VIP/DLC ownership, change your equipped outfit, claim rewards, or install a save automatically. Keep a full save backup.
 
 ![Profile Editor roads, clothes and horns controls](Screenshots/profile-editor-unlocks-v1.2.6.2.png)
 
@@ -712,8 +712,6 @@ Points, eligible category bonuses and Festival wristbands update automatically. 
 The journal editor covers **2,855 mapped challenges** across Horizon Festival and Discover Japan. Their points stay separate; Festival points control the wristband. It changes local journal progress, not actual photos, garage cars, online times or reward-claim history. Discovery stamp/access fields are preserved. Availability can differ from the installed catalog, so only complete entries appropriate to your save.
 
 ![Collection Journal challenge selection](Screenshots/profile-editor-journal-v1.2.6.2.png)
-
-The project owner has confirmed journal completion and automatic progression working in-game. Confirmations and errors now use the app's dark/pink theme, with the backup warning retained.
 
 ### Advanced views
 
