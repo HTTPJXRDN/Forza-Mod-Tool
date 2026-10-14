@@ -11,7 +11,10 @@ namespace FH6LocalCryptoTool;
 public partial class CarRelatedExportWindow : Window
 {
     private readonly IReadOnlyList<CarRelatedDbExport.Car> _cars = Array.Empty<CarRelatedDbExport.Car>();
-    public long? SelectedCarId { get; private set; }
+    private readonly HashSet<long> _selectedCarIds = new();
+    private bool _filtering;
+    public IReadOnlyList<long> SelectedCarIds => _selectedCarIds.Order().ToArray();
+    public long? SelectedCarId => _selectedCarIds.Count == 1 ? _selectedCarIds.Single() : null;
 
     public CarRelatedExportWindow(string sourcePath, IReadOnlyList<CarRelatedDbExport.Car> cars)
     {
@@ -26,14 +29,41 @@ public partial class CarRelatedExportWindow : Window
     {
         if (SearchBox is null || CarChoices is null) return;
         string query = SearchBox.Text.Trim();
-        CarChoices.ItemsSource = query.Length == 0 ? _cars :
-            _cars.Where(c => c.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                             c.Year.ToString().Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                             c.Id.ToString().Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray();
+        _filtering = true;
+        try
+        {
+            CarChoices.ItemsSource = query.Length == 0 ? _cars :
+                _cars.Where(c => c.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                                 c.Year.ToString().Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                                 c.Id.ToString().Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray();
+            // Searching for the next car must not discard cars already picked.
+            foreach (CarRelatedDbExport.Car car in CarChoices.Items)
+                if (_selectedCarIds.Contains(car.Id)) CarChoices.SelectedItems.Add(car);
+        }
+        finally { _filtering = false; }
+        UpdateSelection();
     }
     private void CarChoices_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (ExportButton is not null) ExportButton.IsEnabled = CarChoices.SelectedItem is CarRelatedDbExport.Car;
+        if (_filtering) return;
+        foreach (CarRelatedDbExport.Car car in e.RemovedItems) _selectedCarIds.Remove(car.Id);
+        foreach (CarRelatedDbExport.Car car in e.AddedItems) _selectedCarIds.Add(car.Id);
+        UpdateSelection();
+    }
+    private void UpdateSelection()
+    {
+        if (ExportButton is null || SelectionText is null) return;
+        int hidden = _selectedCarIds.Count - CarChoices.SelectedItems.Count;
+        SelectionText.Text = $"{_selectedCarIds.Count:n0} car(s) selected" +
+            (hidden > 0 ? $" ({hidden:n0} hidden by search)" : "");
+        SelectionText.ToolTip = string.Join("\n", _cars.Where(c => _selectedCarIds.Contains(c.Id)));
+        ExportButton.IsEnabled = _selectedCarIds.Count > 0;
+    }
+    private void ClearSelection_Click(object sender, RoutedEventArgs e)
+    {
+        _selectedCarIds.Clear();
+        CarChoices.UnselectAll();
+        UpdateSelection();
     }
     private void Title_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
@@ -42,8 +72,7 @@ public partial class CarRelatedExportWindow : Window
     }
     private void Export_Click(object sender, RoutedEventArgs e)
     {
-        if (CarChoices.SelectedItem is not CarRelatedDbExport.Car car) return;
-        SelectedCarId = car.Id;
+        if (_selectedCarIds.Count == 0) return;
         DialogResult = true;
     }
     private void Cancel_Click(object sender, RoutedEventArgs e) => DialogResult = false;

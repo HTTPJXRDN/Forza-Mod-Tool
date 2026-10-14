@@ -49,6 +49,9 @@ public partial class ProfileEditorView : UserControl
     public ProfileEditorView()
     {
         InitializeComponent();
+#if PROFILE_UNLOCK_TESTING
+        _confirmUnlockTest = message => ProfileMessageWindow.Show(this, "Profile unlocks & progression", message, confirmation: true);
+#endif
         LogBox.Document = new FlowDocument { PagePadding = new Thickness(0) };
         RowGrid.AutoGeneratingColumn += RowGrid_AutoGenColumn;
         PropGrid.AutoGeneratingColumn += PropGrid_AutoGenColumn;
@@ -118,6 +121,10 @@ public partial class ProfileEditorView : UserControl
         _originalBytes = bytes;
         _container = container;
         _loadedName = Path.GetFileName(path);
+#if PROFILE_UNLOCK_TESTING
+        _unlockTestInputPath = Path.GetFullPath(path);
+        _hasUnlockTestEdits = false;
+#endif
 
         LoadTableList();
         SummaryText.Text =
@@ -798,6 +805,10 @@ public partial class ProfileEditorView : UserControl
             worldChips.Children.Add(StatChip($"{visited}/{sites.Count}", "Festival sites visited"));
         }
         OverviewPanel.Children.Add(worldChips);
+        AddRoadDiscoveryControls();
+#if PROFILE_UNLOCK_TESTING
+        AddUnlockTestingControls();
+#endif
 
         if (career != null)
         {
@@ -849,6 +860,61 @@ public partial class ProfileEditorView : UserControl
                 ? (true, node.DisplayValue())
                 : (false, $"enter a valid {FriendlyType(node)}")));
         return true;
+    }
+
+    void AddRoadDiscoveryControls()
+    {
+        bool supported = RoadDiscoverySaveState.TryReadProfile(_container, out var info, out uint roads);
+
+        var row = new Grid { Margin = new Thickness(0, 10, 0, 0) };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        row.ColumnDefinitions.Add(new ColumnDefinition());
+        var button = new Button
+        {
+            Name = "DiscoverAllRoadsButton",
+            Content = "Discover all roads",
+            Style = (Style)FindResource("PinkButton"),
+            IsEnabled = supported,
+            ToolTip = "Discovers all 671 roads on the recognized FH6 map and updates the saved road statistic. Save edited exports your working copy; keep a backup of the entire save.",
+        };
+        var status = new TextBlock
+        {
+            Name = "RoadDiscoveryStatus",
+            Foreground = BrDim,
+            Margin = new Thickness(12, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            TextWrapping = TextWrapping.Wrap,
+        };
+        if (supported)
+            status.Text = $"{roads:n0} / {RoadDiscoverySaveState.RoadCount:n0} roads (saved statistic)";
+        else
+            status.Text = "This save's road map and statistic are not safely recognized.";
+        Grid.SetColumn(status, 1);
+        row.Children.Add(button); row.Children.Add(status);
+        OverviewPanel.Children.Add(row);
+        OverviewPanel.Children.Add(Note("Sets RoadsDiscovered to 671. "
+            + "Other Discovery progress, rewards and career records are preserved; this does not simulate driving or trigger reward events. "
+            + "Click Save edited to export and keep your full original save backup."));
+        button.Click += (sender, args) =>
+        {
+            try
+            {
+                DiscoverAllRoads();
+                if (RoadDiscoverySaveState.TryReadProfile(_container, out _, out uint updatedRoads))
+                    status.Text = $"{updatedRoads:n0} / {RoadDiscoverySaveState.RoadCount:n0} roads — map bitmap filled; Save edited to export";
+            }
+            catch (Exception ex) { Fail("discover all roads", ex); }
+        };
+    }
+
+    void DiscoverAllRoads()
+    {
+        if (!RoadDiscoverySaveState.TryDiscoverAll(_container, out var before, out uint previousRoads))
+            throw new InvalidDataException("This save's road map and statistic are not safely recognized. Nothing was changed.");
+        RenderProperties();
+        Log($"road discovery: {before.DiscoveredEntries:n0} → {before.EntryCount:n0} bitmap entries; "
+            + $"RoadsDiscovered {previousRoads:n0} → {RoadDiscoverySaveState.RoadCount:n0}; other progression/rewards unchanged — Save edited to export", "ok");
+        StatusLine.Text = "Road map bitmap and statistic edited in the working copy — Save edited to export";
     }
 
     bool AddBxmlIntegerEdit(string mapKey, string propertyId, string label, string hint)
@@ -1041,6 +1107,10 @@ public partial class ProfileEditorView : UserControl
 
     void SaveProfile(string destination)
     {
+#if PROFILE_UNLOCK_TESTING
+        if (_hasUnlockTestEdits && string.Equals(Path.GetFullPath(destination), _unlockTestInputPath, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Unlock and wristband edits must be exported to a separate file. Keep the original profile and a full save backup unchanged.");
+#endif
         // flush the working database to disk and release the file handle
         try { using var cmd = _conn.CreateCommand(); cmd.CommandText = "PRAGMA wal_checkpoint(TRUNCATE)"; cmd.ExecuteNonQuery(); } catch { }
         CloseConnection();
@@ -1100,6 +1170,6 @@ public partial class ProfileEditorView : UserControl
     void Fail(string action, Exception ex)
     {
         Log($"{action} failed: {ex.Message}", "err");
-        MessageBox.Show(ex.Message, "FH6 Profile Editor", MessageBoxButton.OK, MessageBoxImage.Error);
+        ProfileMessageWindow.Show(this, "FH6 Profile Editor", ex.Message, confirmation: false);
     }
 }

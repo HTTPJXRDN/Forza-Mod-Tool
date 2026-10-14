@@ -61,6 +61,54 @@
       <Setter Property="Effect" Value="{StaticResource CardShadow}"/>
     </Style>
 
+    <!-- ===== Pink CheckBox (matches Car Editor) ===== -->
+    <Style x:Key="PinkCheckBox" TargetType="CheckBox">
+      <Setter Property="Foreground" Value="{StaticResource Ink}"/>
+      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="CheckBox">
+            <StackPanel Orientation="Horizontal" Background="Transparent">
+              <Border x:Name="box" Width="20" Height="20" CornerRadius="5"
+                      Background="Transparent" BorderBrush="{StaticResource Line}"
+                      BorderThickness="2" VerticalAlignment="Center">
+                <Viewbox Width="14" Height="14">
+                  <Path x:Name="tick" Data="M4 8 L7 11 L12 4" Stroke="White"
+                        StrokeThickness="2" StrokeStartLineCap="Round"
+                        StrokeEndLineCap="Round" StrokeLineJoin="Round" Visibility="Collapsed"/>
+                </Viewbox>
+              </Border>
+              <ContentPresenter x:Name="label" Margin="9,0,0,0" VerticalAlignment="Center"
+                                TextElement.Foreground="{TemplateBinding Foreground}"/>
+            </StackPanel>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="box" Property="Background" Value="{StaticResource Pink}"/>
+                <Setter TargetName="box" Property="BorderBrush" Value="{StaticResource Pink}"/>
+                <Setter TargetName="tick" Property="Visibility" Value="Visible"/>
+              </Trigger>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="box" Property="BorderBrush" Value="{StaticResource Pink2}"/>
+              </Trigger>
+              <Trigger Property="HasContent" Value="False">
+                <Setter TargetName="label" Property="Margin" Value="0"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style TargetType="CheckBox" BasedOn="{StaticResource PinkCheckBox}"/>
+    <Style x:Key="JournalStatusCheckBox" TargetType="CheckBox" BasedOn="{StaticResource PinkCheckBox}">
+      <Setter Property="HorizontalAlignment" Value="Center"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+      <Setter Property="Focusable" Value="False"/>
+      <Setter Property="IsHitTestVisible" Value="False"/>
+      <Setter Property="Cursor" Value="Arrow"/>
+    </Style>
+
     <!-- ===== Dark ScrollBar (matches Car Editor) ===== -->
     <Style x:Key="ScrollNubHidden" TargetType="RepeatButton">
       <Setter Property="Background" Value="Transparent"/>

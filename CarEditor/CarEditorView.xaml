@@ -671,15 +671,17 @@
                        Foreground="{StaticResource Ink}" MinHeight="112"/>
           </Border>
           <StackPanel Grid.Row="5" Margin="12,0,12,12">
-            <Grid Margin="0,0,0,8">
-              <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-              <CheckBox x:Name="OptAutoshow" Grid.Column="0" IsEnabled="False" Click="Autoshow_Click"
+              <CheckBox x:Name="OptAutoshow" IsEnabled="False" Click="Autoshow_Click" Margin="0,0,0,8"
                         ToolTip="Toggles Data_Car.NotAvailableInAutoshow for every selected car — applies instantly.">
                 <TextBlock Text="Available in Autoshow" TextWrapping="Wrap"/>
               </CheckBox>
-              <CheckBox x:Name="OptDrivable" Grid.Column="1" Content="Is drivable" IsEnabled="False" Margin="10,0,0,0"
-                        Click="Drivable_Click" ToolTip="Toggles Data_Car.IsDrivable for every selected car — applies instantly to the working copy. This flag alone does not make a placeholder car playable."/>
-            </Grid>
+            <StackPanel Margin="0,0,0,8">
+              <CheckBox x:Name="OptRemoveReleaseDate" Content="Remove release date" IsEnabled="False"
+                        Click="RemoveReleaseDate_Click"
+                        ToolTip="Check to clear ContentOffersMapping.ReleaseDateUTC for the selected cars' existing car mappings. Uncheck to restore the dates captured when this DB was loaded. Does not change DLC ownership."/>
+              <TextBlock x:Name="CarReleaseDateStatus" Text="Select a car to see its scheduled release date."
+                         Foreground="{StaticResource Dim}" FontSize="10.5" TextWrapping="Wrap" Margin="0,4,0,0"/>
+            </StackPanel>
             <Grid>
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>

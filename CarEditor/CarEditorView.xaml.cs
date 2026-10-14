@@ -131,7 +131,6 @@ public partial class CarEditorView : UserControl
     string _sourceSltHash;
     readonly Dictionary<string, HashSet<string>> _schema = new(StringComparer.OrdinalIgnoreCase);
     bool HasAutoshow => HasColumn("Data_Car", "NotAvailableInAutoshow");
-    bool HasDrivable => HasColumn("Data_Car", "IsDrivable");
     bool HasProfileOffsets => HasColumn("List_UpgradeCarBodyTireAspectRatioFront", "FrontTireAspectRatioOffset") &&
         HasColumn("List_UpgradeCarBodyTireAspectRatioRear", "RearTireAspectRatioOffset");
     bool HasTrackOffsets => HasColumn("List_UpgradeCarBodyTrackSpacingFront", "Spacing") &&
@@ -1116,9 +1115,8 @@ public partial class CarEditorView : UserControl
             BestHandlingBtn.IsEnabled = RevertHandlingBtn.IsEnabled = false;
         OptAutoshow.IsChecked = false;
         OptAutoshow.IsEnabled = false;
-        OptDrivable.IsChecked = false;
-        OptDrivable.IsEnabled = false;
-        OptDrivable.IsThreeState = false;
+        _loadedCarReleaseDates.Clear();
+        SetCarReleaseDateUnavailable("Select a car to see its scheduled release date.");
         OptRims.IsChecked = OptWidth.IsChecked = OptAspect.IsChecked = OptTrack.IsChecked = OptFmTrack.IsChecked = false;
         OptRWD.IsChecked = OptFWD.IsChecked = OptManual.IsChecked = false;
         OptWhite.IsChecked = OptFeTires.IsChecked = OptLift.IsChecked = OptRaceSuspensionLimit.IsChecked = false;
@@ -1143,6 +1141,7 @@ public partial class CarEditorView : UserControl
         }.ToString());
         _conn.Open();
         ReadSchema();
+        CaptureCarReleaseDates();
         Exec("PRAGMA foreign_keys=OFF");
         AttachStockReference();
         IndexDb();
@@ -1424,7 +1423,11 @@ public partial class CarEditorView : UserControl
     void PickCar()
     {
         var selected = CarList.SelectedItems.Cast<CarItem>().ToList();
-        if (selected.Count == 0) return;
+        if (selected.Count == 0)
+        {
+            SetCarReleaseDateUnavailable("Select a car to see its scheduled release date.");
+            return;
+        }
         var c = CarList.SelectedItem as CarItem ?? selected[^1];
         _car = c;
         bool batch = selected.Count > 1;
@@ -1478,7 +1481,6 @@ public partial class CarEditorView : UserControl
         else
         {
             OptAutoshow.IsThreeState = false;
-            OptDrivable.IsThreeState = false;
             ApplyPowerBtn.ToolTip = null;
             Log("selected " + c.Media, "info");
         }
@@ -1513,15 +1515,7 @@ public partial class CarEditorView : UserControl
         OptAutoshow.IsEnabled = HasAutoshow;
         OptAutoshow.ToolTip = HasAutoshow ? null : "Motorsport does not use Horizon's NotAvailableInAutoshow field.";
         OptAutoshow.IsChecked = HasAutoshow && inShow;
-        OptDrivable.IsEnabled = HasDrivable;
-        OptDrivable.ToolTip = HasDrivable
-            ? "Toggles Data_Car.IsDrivable for every selected car — applies instantly to the working copy. This flag alone does not make a placeholder car playable."
-            : "This database has no Data_Car.IsDrivable field.";
-        bool[] selectedDrivable = CarList.SelectedItems.Cast<CarItem>()
-            .Select(car => HasDrivable && (ScalarL("SELECT IsDrivable FROM Data_Car WHERE Id=?", car.Id) ?? 0) != 0).ToArray();
-        OptDrivable.IsThreeState = selectedDrivable.Length > 1;
-        OptDrivable.IsChecked = selectedDrivable.Length == 0 ? false
-            : selectedDrivable.All(value => value) ? true : selectedDrivable.All(value => !value) ? false : null;
+        ShowCarReleaseDate();
         // Manual transmission only makes sense on a car that is currently electric: it must have a stock
         // motor AND no stock engine. That disables it for native ICE, EV→ICE conversions, and any car that
         // had an engine set as stock this session — while staying on for native EVs and ICE→EV swaps.
@@ -1954,33 +1948,6 @@ public partial class CarEditorView : UserControl
         string subject = targets.Count > 1 ? $"{targets.Count} selected cars" : _car.Media;
         Log(avail ? $"✓ {subject} now show in the Autoshow" : $"{subject} hidden from the Autoshow", avail ? "ok" : "warn");
         if (targets.Count > 1) PickCar(); else ShowCarInfo();
-    }
-
-    void Drivable_Click(object sender, RoutedEventArgs e)
-    {
-        if (_conn == null || _batchRunning || !HasDrivable || CarList.SelectedItems.Count == 0) return;
-        // The indeterminate state is a mixed selection, not an instruction to
-        // erase a flag. Only an explicit checked/unchecked value is written.
-        if (OptDrivable.IsChecked is not bool drivable) { PickCar(); return; }
-        var targets = SelectedCars();
-        bool savepoint = false;
-        try
-        {
-            Exec("SAVEPOINT edit_drivable"); savepoint = true;
-            foreach (var car in targets)
-                if (Exec("UPDATE Data_Car SET IsDrivable=? WHERE Id=?", drivable ? 1 : 0, car.Id) != 1)
-                    throw new InvalidOperationException("A selected car is no longer present; no drivable flags were changed.");
-            Exec("RELEASE edit_drivable"); savepoint = false;
-            RefreshModifiedAfterExcludedEdit();
-            string subject = targets.Count > 1 ? $"{targets.Count} selected cars" : _car.Media;
-            Log($"{subject} · IsDrivable = {(drivable ? 1 : 0)} (working copy)", drivable ? "ok" : "warn");
-        }
-        catch (Exception ex)
-        {
-            if (savepoint) try { Exec("ROLLBACK TO edit_drivable"); Exec("RELEASE edit_drivable"); } catch { }
-            Log("drivable update failed: " + ex.Message, "err");
-        }
-        finally { PickCar(); }
     }
 
     void SetFeCarsAutoshowAvailability(bool available)

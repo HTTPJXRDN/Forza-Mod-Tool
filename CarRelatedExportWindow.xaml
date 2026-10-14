@@ -36,24 +36,31 @@
             </Grid>
             <StackPanel Grid.Row="1" Margin="16,14,16,10">
                 <TextBlock x:Name="SourceText" FontSize="12" Foreground="{StaticResource Dim}" TextTrimming="CharacterEllipsis"/>
-                <TextBlock Text="Choose one car. This creates a separate SQLite donor with all rows related to that car, including its stock body and unchanged rows needed for import."
+                <TextBlock Text="Choose one or more cars with Ctrl-click / Shift-click (Ctrl+A selects the visible list). All selected cars go into ONE SQLite donor, including their stock bodies and unchanged rows needed for import."
                            TextWrapping="Wrap" Margin="0,8,0,0"/>
                 <TextBlock Text="Merge-only file: use Import car DB for a one-click import. Do not re-encrypt this partial GameDB directly for the game."
                            Foreground="{StaticResource Pink}" TextWrapping="Wrap" Margin="0,6,0,0"/>
             </StackPanel>
-            <TextBox x:Name="SearchBox" Grid.Row="2" Margin="16,0,16,9" Padding="8,6"
+            <Grid Grid.Row="2" Margin="16,0,16,9">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBox x:Name="SearchBox" Padding="8,6"
                      Background="#FF1F1F22" Foreground="#FFF4F4F6" BorderBrush="{StaticResource Line}"
                      TextChanged="Search_Changed" ToolTip="Search car name, year, or ID"/>
+                <Button Grid.Column="1" Content="Clear selection" Margin="8,0,0,0"
+                        Style="{StaticResource ButtonStyle}" Click="ClearSelection_Click"/>
+            </Grid>
             <ListBox Grid.Row="3" x:Name="CarChoices" Margin="16,0,16,0" FontSize="13" Padding="7"
                      Background="#FF1F1F22" Foreground="#FFF4F4F6" BorderBrush="{StaticResource Line}"
-                     SelectionChanged="CarChoices_SelectionChanged"/>
+                     SelectionMode="Extended" SelectionChanged="CarChoices_SelectionChanged"/>
             <Grid Grid.Row="4" Margin="16,12,16,16">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Foreground="{StaticResource Dim}" VerticalAlignment="Center" TextWrapping="Wrap"
-                           Text="The dragged-in source file is not changed."/>
+                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                    <TextBlock x:Name="SelectionText" Foreground="{StaticResource Pink}" TextWrapping="Wrap" Text="0 cars selected"/>
+                    <TextBlock Foreground="{StaticResource Dim}" TextWrapping="Wrap" Text="The source file is not changed."/>
+                </StackPanel>
                 <Button Grid.Column="1" Content="Cancel" Style="{StaticResource ButtonStyle}"
                         Margin="12,0,8,0" Click="Cancel_Click"/>
-                <Button Grid.Column="2" x:Name="ExportButton" Content="Export selected car" IsEnabled="False"
+                <Button Grid.Column="2" x:Name="ExportButton" Content="Export selected cars" IsEnabled="False"
                         Style="{StaticResource ButtonStyle}" BorderBrush="{StaticResource Pink}" Click="Export_Click"/>
             </Grid>
         </Grid>

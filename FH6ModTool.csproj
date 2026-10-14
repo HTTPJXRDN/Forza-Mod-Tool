@@ -10,8 +10,8 @@
     <Product>FH6 Local Mod Tool</Product>
     <Title>FH6 Local Mod Tool</Title>
     <Description>Edit FH6 databases, cars, animations, and profile saves in one app.</Description>
-    <Version>1.2.6.1</Version>
-    <FileVersion>1.2.6.1</FileVersion>
+    <Version>1.2.6.2</Version>
+    <FileVersion>1.2.6.2</FileVersion>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\ICO\dbtool_icon.ico</ApplicationIcon>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
@@ -23,6 +23,9 @@
     <Title>Forza Mod Tool</Title>
     <Description>Forza Horizon 6 and Motorsport database, car, animation and asset tools.</Description>
     <DefineConstants>$(DefineConstants);PUBLIC_CRYPTO_RUNTIME</DefineConstants>
+    <!-- Include the in-game-tested profile unlock and journal controls in this release. -->
+    <ProfileUnlockTesting Condition="'$(ProfileUnlockTesting)' == ''">true</ProfileUnlockTesting>
+    <DefineConstants Condition="'$(ProfileUnlockTesting)' == 'true'">$(DefineConstants);PROFILE_UNLOCK_TESTING</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.8" />
