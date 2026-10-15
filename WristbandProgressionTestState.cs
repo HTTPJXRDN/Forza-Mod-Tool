@@ -146,13 +146,15 @@ public static class WristbandProgressionTestState
         return true;
     }
 
-    // Narrow version-2 StatsSaveState signature. Unknown stat counts/branches fail
-    // closed. The neighboring named statistic bounds the entry, including when no
+    // Narrow version-2 StatsSaveState signature. The number of unrelated stats
+    // varies between accounts/updates (685 and 692 are both observed); it is not
+    // a format version. Unknown branches still fail closed. The named neighbor
+    // bounds the entry, including when no
     // Track=820 value exists yet. No blind replace of arbitrary occurrences of 0/7.
     static bool TryBandStat(byte[] data, out int offset, out bool present, out byte band)
     {
         offset = -1; present = false; band = 0;
-        if (data.Length < 32 || U32(data, 0) != 2 || U32(data, 4) != 692) return false;
+        if (data.Length < 32 || U32(data, 0) != 2 || U32(data, 4) is 0 or > 100_000 || U32(data, 4) > (data.Length - 8) / 12) return false;
         byte[] id = BitConverter.GetBytes(CurrentBandStat);
         int match = data.AsSpan(8).IndexOf(id);
         if (match < 0) return false;

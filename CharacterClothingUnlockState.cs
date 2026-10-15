@@ -49,11 +49,23 @@ public static class CharacterClothingUnlockState
     /// non-wardrobe items, rewards and account. No save or game file is written.
     /// </summary>
     public static bool TryUnlockAll(ProfileContainer? container, out UnlockResult result)
+        => TryUnlockSelected(container, AllClothing.Where(c => !IsEntitlementManaged(c.Id)).Select(c => c.Id), out result);
+
+    public static bool TryReadUnlocked(ProfileContainer? container, out ulong[] ids)
+    {
+        ids = Array.Empty<ulong>();
+        if (!TryRecord(container, out var record) || !TryParse(record!.Payload, out var inventory)) return false;
+        ids = inventory!.Items.Where(p => p.Value.First == 1).Select(p => p.Key).ToArray(); return true;
+    }
+
+    public static bool TryUnlockSelected(ProfileContainer? container, IEnumerable<ulong>? selectedIds, out UnlockResult result)
     {
         result = default;
+        var selected = selectedIds?.ToHashSet();
+        if (selected is null || selected.Count == 0 || selected.Any(id => !AllClothing.Any(c => c.Id == id) || IsEntitlementManaged(id))) return false;
         if (!TryRecord(container, out var record) || !TryParse(record!.Payload, out var inventory)) return false;
         int added = 0, unlockedExisting = 0;
-        foreach (var item in AllClothing)
+        foreach (var item in AllClothing.Where(c => selected.Contains(c.Id)))
             if (IsEntitlementManaged(item.Id)) continue;
             else if (inventory!.Items.TryAdd(item.Id, new Flags(1, 1))) added++;
             else if (inventory.Items[item.Id].First == 0)

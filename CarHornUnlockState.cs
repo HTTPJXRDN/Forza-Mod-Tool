@@ -23,14 +23,26 @@ public static class CarHornUnlockState
     }
 
     public static bool TryUnlockAll(ProfileContainer? container, out int added)
+        => TryUnlockSelected(container, AllHorns.Select(h => h.Id), out added);
+
+    public static bool TryReadUnlocked(ProfileContainer? container, out ulong[] ids)
+    {
+        ids = Array.Empty<ulong>();
+        if (!TryRecord(container, out var record) || !TryParse(record!.Payload, out var inventory)) return false;
+        ids = inventory!.Items.ToArray(); return true;
+    }
+
+    public static bool TryUnlockSelected(ProfileContainer? container, IEnumerable<ulong>? selectedIds, out int added)
     {
         added = 0;
+        var selected = selectedIds?.ToHashSet();
+        if (selected is null || selected.Count == 0 || selected.Any(id => !AllHorns.Any(h => h.Id == id))) return false;
         if (!TryRecord(container, out var record) || !TryParse(record!.Payload, out var inventory)) return false;
         var ids = inventory!.Items.ToHashSet();
         int changed = 0;
         // A natural wheelspin acquisition appended exactly one ID. Keep all
         // existing ordering; do not sort or reinterpret this list as clothing flags.
-        foreach (var horn in AllHorns)
+        foreach (var horn in AllHorns.Where(h => selected.Contains(h.Id)))
             if (ids.Add(horn.Id)) { inventory.Items.Add(horn.Id); changed++; }
         if (changed == 0) return true;
         if (inventory.Items.Count > MaxHorns) return false;
