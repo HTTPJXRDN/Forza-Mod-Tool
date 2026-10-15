@@ -4,6 +4,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Microsoft.Win32;
@@ -58,7 +59,14 @@ public partial class GarageViewerView : UserControl
     GarageRow[] _rows = Array.Empty<GarageRow>();
     bool _busy, _started;
     Window? _owner;
-    public GarageViewerView() { InitializeComponent(); }
+    public GarageViewerView()
+    {
+        InitializeComponent();
+        CatalogList.CommandBindings.Add(new CommandBinding(ApplicationCommands.SelectAll,
+            (_, e) => { CatalogList.SelectAll(); UpdateButtons(); e.Handled = true; },
+            (_, e) => { e.CanExecute = !_busy && CatalogList.IsEnabled && CatalogList.Items.Count > 0; e.Handled = true; }));
+        CatalogList.InputBindings.Add(new KeyBinding(ApplicationCommands.SelectAll, Key.A, ModifierKeys.Control));
+    }
     void GarageFields_Expanded(object sender,RoutedEventArgs e) {
         if(GarageFieldsRow==null || GarageListHeightSplitter==null)return;
         GarageFieldsRow.MinHeight=60;GarageFieldsRow.Height=_carFieldsHeight;
@@ -209,7 +217,8 @@ public partial class GarageViewerView : UserControl
             ? new GarageRow(c, model.DisplayName + (model.IsInitialDrive ? " [Initial Drive variant]" : ""), model.RemovalLocked) { Manufacturer = model.Manufacturer, MediaName=model.MediaName } : new GarageRow(c, $"Unknown car ({c.CarId}) — load matching GameDB", false)).ToArray() ?? Array.Empty<GarageRow>();
         LoadedPath.Text = _session == null ? "Open or drop a C_ProfileData save here. The original file is never overwritten."
             : _session.SourcePath + (_session.HasChanges ? " • unexported edits" : " • private working copy") + (_session.CanEdit ? "" : "\n" + _session.EditRestriction);
-        CatalogLabel.Text = _catalog == null ? "No car catalog loaded." : $"{_catalog.Label} • {_catalog.Cars.Count(c => !c.IsInitialDrive):N0} selectable models • load your GameDB for newer/custom cars";
+        CatalogLabel.Text = _catalog == null ? "No car catalog loaded." : $"{_catalog.Label} • {_catalog.Cars.Count(c => c.CanAddToGarage && !c.IsTraffic):N0} regular / {_catalog.Cars.Count(c => c.CanAddToGarage && c.IsTraffic):N0} traffic choices • load your GameDB for newer/custom cars";
+        MissingCarsOnlyBox.IsEnabled = _session != null;
         ThumbnailCacheLabel.Text=_thumbnailMessage;
         StockThumbnailLabel.Text=_stockThumbnails==null?"Stock fallback not found • Auto-find or choose a folder":$"Stock fallback: {_stockThumbnails.Count:N0} models • cached images first";
         StockThumbnailLabel.ToolTip=_stockThumbnails?.SourcePath;
@@ -234,7 +243,12 @@ public partial class GarageViewerView : UserControl
     {
         var selected = CatalogList.SelectedItems.Cast<GarageCarDefinition>().Select(c => c.Id).ToHashSet();
         string query = CatalogSearch.Text.Trim();
-        var filtered = _catalog?.Cars.Where(c => !c.IsInitialDrive && (Matches(c.DisplayName, c.Id, query) || c.Manufacturer.Contains(query, StringComparison.OrdinalIgnoreCase))).ToArray() ?? Array.Empty<GarageCarDefinition>();
+        bool trafficOnly = TrafficOnlyBox.IsChecked == true;
+        var owned = _rows.Select(c => c.CarId).ToHashSet();
+        bool missingOnly = MissingCarsOnlyBox.IsChecked == true && _session != null;
+        var filtered = _catalog?.Cars.Where(c => c.CanAddToGarage && c.IsTraffic == trafficOnly &&
+            (!missingOnly || !owned.Contains(c.Id)) &&
+            (Matches(c.DisplayName, c.Id, query) || c.Manufacturer.Contains(query, StringComparison.OrdinalIgnoreCase))).ToArray() ?? Array.Empty<GarageCarDefinition>();
         CatalogList.ItemsSource = Grouped(filtered);
         foreach(var car in filtered.Where(c => selected.Contains(c.Id))) CatalogList.SelectedItems.Add(car);
         ExpandSearchResults(CatalogList, query);
@@ -293,6 +307,8 @@ public partial class GarageViewerView : UserControl
     }
     void Search_Changed(object sender, TextChangedEventArgs e) { if (GarageGrid != null && !_busy && TryApplyCarFields()) ApplyGarageFilter(); }
     void CatalogSearch_Changed(object sender, TextChangedEventArgs e) { if (CatalogList != null && !_busy) ApplyCatalogFilter(); }
+    void TrafficOnly_Changed(object sender, RoutedEventArgs e) { if (CatalogList != null && !_busy) ApplyCatalogFilter(); }
+    void MissingCarsOnly_Changed(object sender, RoutedEventArgs e) { if (CatalogList != null && !_busy) ApplyCatalogFilter(); }
     void Selection_Changed(object sender, SelectionChangedEventArgs e) {
         if(RemoveButton==null || _restoringSelection)return;
         if(!_busy && ReferenceEquals(sender,GarageGrid) && _detailIds.Length>0 &&

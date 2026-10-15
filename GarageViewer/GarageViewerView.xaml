@@ -120,7 +120,11 @@
     <GridSplitter x:Name="GarageListWidthSplitter" Grid.Column="1" Width="5" HorizontalAlignment="Stretch" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" Cursor="SizeWE" ToolTip="Drag left/right to resize the garage list and stock-car catalog."/>
     <Grid Grid.Column="2" Margin="8,0,0,0"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
      <TextBlock Text="ADD STOCK CARS • CTRL / SHIFT SELECT" Foreground="#E8175D" FontWeight="Bold" Margin="0,0,0,8" TextWrapping="Wrap"/>
-     <TextBox x:Name="CatalogSearch" Grid.Row="1" TextChanged="CatalogSearch_Changed" ToolTip="Search available stock cars by name, year, or ID." Margin="0,0,0,8"/>
+     <StackPanel Grid.Row="1">
+      <TextBox x:Name="CatalogSearch" TextChanged="CatalogSearch_Changed" ToolTip="Search cars in the current list by name, year, or ID." Margin="0,0,0,8"/>
+      <CheckBox x:Name="TrafficOnlyBox" Content="Traffic cars only (experimental)" Checked="TrafficOnly_Changed" Unchecked="TrafficOnly_Changed" Margin="0,0,0,8" ToolTip="Off: regular cars only. On: traffic cars only. Variants with ambiguous stock parts are excluded from both lists. Switching lists clears hidden selections."/>
+      <CheckBox x:Name="MissingCarsOnlyBox" Content="Missing cars only" IsEnabled="False" Checked="MissingCarsOnly_Changed" Unchecked="MissingCarsOnly_Changed" Margin="0,0,0,8" ToolTip="Hide models already in the loaded garage, including cars added to this working copy. Uses garage contents, not Collection Journal ownership. Load a save to enable."/>
+     </StackPanel>
      <ListBox x:Name="CatalogList" Grid.Row="2" DisplayMemberPath="DisplayName" SelectionMode="Extended" SelectionChanged="Selection_Changed" VirtualizingPanel.IsVirtualizingWhenGrouping="True"><ListBox.GroupStyle><StaticResource ResourceKey="CatalogManufacturerGroup"/></ListBox.GroupStyle></ListBox>
      <Button x:Name="AddButton" Grid.Row="3" Content="Add selected cars" Click="Add_Click" IsEnabled="False" Margin="0,8,0,0"/>
     </Grid>

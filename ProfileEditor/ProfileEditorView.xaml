@@ -323,6 +323,71 @@
       </Setter>
     </Style>
 
+    <!-- ===== Multi-select inventory dropdowns ===== -->
+    <Style x:Key="UnlockDropdownToggle" TargetType="ToggleButton">
+      <Setter Property="Foreground" Value="{StaticResource Ink}"/>
+      <Setter Property="Background" Value="{StaticResource Card2}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource Line}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="MinHeight" Value="34"/>
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ToggleButton">
+            <Border x:Name="box" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="7">
+              <Grid>
+                <ContentPresenter Margin="12,7,32,7" VerticalAlignment="Center"/>
+                <Path x:Name="arrow" Data="M 0,0 L 4,4 L 0,8" Stroke="{StaticResource Pink}" StrokeThickness="1.7"
+                      HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,15,0" RenderTransformOrigin="0.5,0.5"/>
+              </Grid>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="box" Property="BorderBrush" Value="{StaticResource Pink}"/>
+                <Setter TargetName="arrow" Property="RenderTransform"><Setter.Value><RotateTransform Angle="90"/></Setter.Value></Setter>
+              </Trigger>
+              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="box" Property="BorderBrush" Value="{StaticResource Pink2}"/></Trigger>
+              <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="box" Property="BorderBrush" Value="{StaticResource Pink}"/></Trigger>
+              <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="UnlockListItem" TargetType="ListBoxItem">
+      <Setter Property="Foreground" Value="{StaticResource Ink}"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderBrush" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Padding" Value="9,6"/>
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+      <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+      <Setter Property="IsEnabled" Value="{Binding Selectable}"/>
+      <Setter Property="ToolTip" Value="{Binding Detail}"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ListBoxItem">
+            <Border x:Name="row" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}" CornerRadius="4">
+              <ContentPresenter/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="row" Property="Background" Value="#FF303035"/></Trigger>
+              <Trigger Property="IsSelected" Value="True">
+                <Setter TargetName="row" Property="Background" Value="#55E8175D"/>
+                <Setter TargetName="row" Property="BorderBrush" Value="{StaticResource Pink}"/>
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False"><Setter Property="Foreground" Value="{StaticResource Faint}"/></Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
     <!-- ===== Dark DataGrid ===== -->
     <Style x:Key="PdCell" TargetType="DataGridCell">
       <Setter Property="Foreground" Value="{StaticResource Ink}"/>

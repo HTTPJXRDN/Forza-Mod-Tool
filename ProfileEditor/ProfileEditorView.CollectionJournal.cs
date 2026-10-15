@@ -13,22 +13,26 @@ public partial class ProfileEditorView
     string _journalCategory = "All categories";
     string _journalSearch = "";
     bool _journalIncompleteOnly = true;
+    Action _refreshCollectionJournalDisplay;
 
     void AddCollectionJournalControls()
     {
         var heading = SectionHeader("Collection Journal"); heading.Name = "CollectionJournalHeading";
         OverviewPanel.Children.Add(heading);
-        if (!CollectionJournalState.TryRead(_container, out var journal, out string reason))
-        {
-            var unsupported = Note(reason); unsupported.Name = "CollectionJournalStatus";
-            OverviewPanel.Children.Add(unsupported); return;
-        }
-        var status = Note($"{journal.Completed:n0} / {journal.Rows.Length:n0} completed · "
-            + $"Festival: {journal.FestivalPoints:n0} · Discover Japan: {journal.DiscoveryPoints:n0}"
-            + (journal.TotalsAgree ? "" : " · Points will sync when you complete challenges."));
+        var journal = CollectionJournalState.ReadForDisplay(_container);
+        string Total(int? points) => points?.ToString("n0") ?? "Unknown";
+        string StatusText() => (journal.CanEdit ? $"{journal.Completed:n0} completed · " : "Read-only · ")
+            + $"Festival: {Total(journal.FestivalPoints)} · Discover Japan: {Total(journal.DiscoveryPoints)}"
+            + (journal.PartialCatalog ? " · " + journal.Warning : journal.TotalsAgree ? "" : " · Points will sync when you complete challenges.");
+        var status = Note(StatusText());
         status.Name = "CollectionJournalStatus"; OverviewPanel.Children.Add(status);
-        var help = Note("Select rows (Ctrl-click for more, Ctrl+A for all), then click Complete selected challenges. Points, bonuses and wristbands update automatically.");
+        var help = Note(!journal.CanEdit
+            ? "The reference challenges are shown below. Unknown does not mean unfinished; saved completion could not be read. Editing stays off."
+            : journal.PartialCatalog
+                ? "Select rows (Ctrl-click for more, Ctrl+A for all), then click Complete selected challenges. Unsupported rows are kept unchanged."
+                : "Select rows (Ctrl-click for more, Ctrl+A for all), then Complete selected challenges. Points, wristbands, linked race results, PR stunts and job rank update automatically.");
         help.Name = "CollectionJournalHelp"; OverviewPanel.Children.Add(help);
+        OverviewPanel.Children.Add(Note("World sync: boards/mascots, landmarks and Story stars. For regions, complete all ten rows. Story results use completion and stars; online records stay unchanged."));
 
         var filters = new WrapPanel { Margin = new Thickness(0, 8, 0, 6) };
         var campaign = new ComboBox
@@ -53,15 +57,33 @@ public partial class ProfileEditorView
             EnableRowVirtualization = true, EnableColumnVirtualization = true,
         };
         var statusCheckBoxStyle = (Style)FindResource("JournalStatusCheckBox");
-        grid.Columns.Add(new DataGridCheckBoxColumn { Header = "Done", Binding = new Binding("Completed"), Width = 50, ElementStyle = statusCheckBoxStyle });
+        if (journal.PartialCatalog)
+            grid.Columns.Add(new DataGridTextColumn { Header = "Done", Binding = new Binding("CompletionText"), Width = 75 });
+        else
+            grid.Columns.Add(new DataGridCheckBoxColumn { Header = "Done", Binding = new Binding("Completed"), Width = 50, ElementStyle = statusCheckBoxStyle });
         grid.Columns.Add(new DataGridTextColumn { Header = "Category", Binding = new Binding("Category"), Width = 155 });
         grid.Columns.Add(new DataGridTextColumn { Header = "Challenge", Binding = new Binding("Name"), Width = new DataGridLength(1.3, DataGridLengthUnitType.Star) });
         grid.Columns.Add(new DataGridTextColumn { Header = "Objective", Binding = new Binding("Objective"), Width = new DataGridLength(1.7, DataGridLengthUnitType.Star) });
-        grid.Columns.Add(new DataGridTextColumn { Header = "Points", Binding = new Binding("Points"), Width = 65 });
+        grid.Columns.Add(new DataGridTextColumn { Header = "Points", Binding = new Binding("PointsDisplay"), Width = 65 });
         grid.Columns.Add(new DataGridCheckBoxColumn { Header = "Auto bonus", Binding = new Binding("Automatic"), Width = 90, ElementStyle = statusCheckBoxStyle });
+        if (journal.PartialCatalog)
+            grid.Columns.Add(new DataGridTextColumn { Header = "Compatibility", Binding = new Binding("Compatibility"), Width = 230 });
         OverviewPanel.Children.Add(grid);
-        var complete = TestButton("CompleteJournalSelectionButton", "Complete selected challenges", true);
+        var complete = TestButton("CompleteJournalSelectionButton", "Complete selected challenges", journal.CanEdit);
         OverviewPanel.Children.Add(complete);
+        if (journal.PartialCatalog)
+        {
+            var details = new TextBox
+            {
+                Name = "JournalCompatibilityDetails", Text = journal.Diagnostics, IsReadOnly = true, TextWrapping = TextWrapping.Wrap,
+                Style = (Style)FindResource("Input"), MaxHeight = 160, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            };
+            OverviewPanel.Children.Add(new Expander
+            {
+                Name = "JournalCompatibilityExpander", Header = "Journal compatibility details", Content = details,
+                Foreground = (System.Windows.Media.Brush)FindResource("Dim"), Margin = new Thickness(0, 6, 0, 0),
+            });
+        }
 
         bool ready = false;
         void Render()
@@ -73,7 +95,7 @@ public partial class ProfileEditorView
             grid.ItemsSource = journal.Rows.Where(row =>
                 (_journalCampaign == "All campaigns" || row.Campaign == _journalCampaign) &&
                 (_journalCategory == "All categories" || row.Category == _journalCategory) &&
-                (!_journalIncompleteOnly || !row.Completed) &&
+                (!_journalIncompleteOnly || !row.StateKnown || !row.Completed) &&
                 (_journalSearch.Length == 0 || (row.Name + " " + row.Objective + " " + row.Subtitle).Contains(_journalSearch, StringComparison.OrdinalIgnoreCase)))
                 .OrderBy(row => row.Campaign).ThenBy(row => row.Category).ThenBy(row => row.Name).ToArray();
         }
@@ -89,31 +111,50 @@ public partial class ProfileEditorView
         category.SelectionChanged += (_, _) => Render(); search.TextChanged += (_, _) => Render();
         incomplete.Checked += (_, _) => Render(); incomplete.Unchecked += (_, _) => Render();
         Categories(); ready = true; Render();
+        _refreshCollectionJournalDisplay = () =>
+        {
+            journal = CollectionJournalState.ReadForDisplay(_container);
+            status.Text = StatusText(); Categories(); Render();
+        };
         complete.Click += (_, _) =>
         {
             try
             {
                 var selected = grid.SelectedItems.OfType<CollectionJournalState.Row>().ToArray();
                 // Ctrl+A also selects bonus rows; those must be earned through their dependencies, not awarded directly.
-                ulong[] ids = selected.Where(row => !row.Automatic).Select(row => row.Id).ToArray();
+                ulong[] ids = selected.Where(row => row.Supported && !row.Automatic).Select(row => row.Id).ToArray();
+                int unavailable = selected.Count(row => !row.Supported);
+                if (!journal.CanEdit) { Log("Journal is read-only. See compatibility details below the list.", "info"); return; }
                 if (selected.Length > 0 && ids.Length == 0)
                 {
-                    Log("Bonuses complete automatically. Select their unfinished challenges instead.", "info");
+                    Log("Select supported unfinished challenges. Missing/changed definitions stay read-only; bonuses are automatic.", "info");
                     return;
                 }
                 if (!CollectionJournalState.TryPreview(_container, ids, out var preview, out string error))
                     throw new InvalidOperationException(error);
                 if (!preview.Changed) { Log("Selected journal challenges were already completed; no points were added", "info"); return; }
                 if (!_confirmUnlockTest($"Complete {preview.SelectedCompleted} challenge(s) and {preview.AutomaticCompleted} bonus(es)? "
+                    + (preview.RacesUpdated > 0 ? $"Sync {preview.RacesUpdated} linked race result(s). " : "")
+                    + (preview.PrStuntsUpdated > 0 ? $"Sync {preview.PrStuntsUpdated} PR stunt(s); new PBs use the selected star cutoff + 0–2%, preserving better scores. " : "")
+                    + (preview.JobLevel > 0 ? $"Set Food Delivery to level {preview.JobLevel}, with matching Job XP. " : "")
+                    + (preview.BoardsUpdated + preview.MascotsUpdated > 0 ? $"Collect {preview.BoardsUpdated} board(s) and {preview.MascotsUpdated} mascot(s). " : "")
+                    + (preview.LandmarksUpdated > 0 ? $"Discover {preview.LandmarksUpdated} permanent landmark(s). " : "")
+                    + (preview.RegionsUpdated ? "Discover all ten regions and reveal map fog. " : "")
+                    + (preview.StoriesUpdated > 0 ? $"Sync {preview.StoriesUpdated} Story chapter completion/star result(s). Story PB times remain unchanged. " : "")
                     + $"Festival points: {preview.PreviousFestivalPoints:n0} → {preview.FestivalPoints:n0}; Discover Japan: {preview.PreviousDiscoveryPoints:n0} → {preview.DiscoveryPoints:n0}. "
                     + $"Wristband: {ProfileUnlockTestState.Wristbands[preview.PreviousBand].Name} → {ProfileUnlockTestState.Wristbands[preview.Band].Name}. "
-                    + "This changes local journal progress only; it does not add cars, photos, online results or claimed rewards.")) return;
+                    + (unavailable > 0 ? $"{unavailable} unavailable row(s) will stay unchanged. " : "")
+                    + "This changes local progress only; it does not add cars, photos, online results or claimed rewards.")) return;
                 if (!CollectionJournalState.TryComplete(_container, ids, out var changed, out error)) throw new InvalidOperationException(error);
                 _hasUnlockTestEdits |= changed.Changed;
                 RefreshSaveStateDisplays(); BuildCareer(); BuildOverview();
                 Log($"Collection Journal: {changed.SelectedCompleted} selected + {changed.AutomaticCompleted} automatic; "
                     + $"Festival {changed.PreviousFestivalPoints:n0} → {changed.FestivalPoints:n0}; Discovery {changed.PreviousDiscoveryPoints:n0} → {changed.DiscoveryPoints:n0}; "
-                    + $"wristband {ProfileUnlockTestState.Wristbands[changed.Band].Name} — Save edited to export separately", "ok");
+                    + $"wristband {ProfileUnlockTestState.Wristbands[changed.Band].Name}; {changed.RacesUpdated} race result(s), {changed.PrStuntsUpdated} PR stunt(s) synced"
+                    + (changed.JobLevel > 0 ? $"; Food Delivery level {changed.JobLevel}" : "") + " — Save edited to export separately", "ok");
+                if (changed.BoardsUpdated + changed.MascotsUpdated + changed.LandmarksUpdated + changed.StoriesUpdated > 0 || changed.RegionsUpdated)
+                    Log($"World progress: {changed.BoardsUpdated} boards, {changed.MascotsUpdated} mascots, {changed.LandmarksUpdated} landmarks, "
+                        + $"regions {(changed.RegionsUpdated ? "revealed" : "unchanged")}, {changed.StoriesUpdated} Story chapter(s). Story finishing-time PBs were not edited.", "info");
                 StatusLine.Text = "Journal completion and progression applied to working copy — Save edited to export separately";
             }
             catch (Exception ex) { Fail("complete Collection Journal challenges", ex); }

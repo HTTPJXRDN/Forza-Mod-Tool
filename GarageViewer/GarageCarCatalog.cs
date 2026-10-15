@@ -13,6 +13,10 @@ public sealed record GarageCarDefinition(long Id, string MediaName, long Year, b
     public string Name => _friendlyName;
     public long DisplayYear => FH6CarEditor.CarDisplayNames.Year(Id, MediaName, Year);
     public bool IsInitialDrive => FH6CarEditor.CarDisplayNames.IsInitialDrive(Id, MediaName);
+    public bool IsTraffic => MediaName.Contains("_Traffic_", StringComparison.OrdinalIgnoreCase);
+    // These traffic variants have ambiguous stock side-skirt choices. Retain their
+    // definitions for owned-car lookup, but keep them out of both Add pickers.
+    public bool CanAddToGarage => !IsInitialDrive && Id is not (2903 or 4124 or 4125 or 4126 or 4127 or 4129);
     public string DisplayName => $"{DisplayYear} {Name}";
     public override string ToString() => DisplayName;
 }

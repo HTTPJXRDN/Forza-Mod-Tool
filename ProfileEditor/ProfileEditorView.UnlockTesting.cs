@@ -3,6 +3,9 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Data;
+using System.Windows.Input;
 using FH6LocalCryptoTool;
 
 namespace FH6ProfileEditor;
@@ -13,22 +16,21 @@ public partial class ProfileEditorView
     bool _hasUnlockTestEdits;
     Func<string, bool> _confirmUnlockTest;
 
+    sealed record UnlockItem(ulong Id, string Name, string Category, bool Unlocked, bool Selectable = true, string Detail = "", string Suffix = "")
+    {
+        public string Display => (Unlocked ? "Owned · " : "Locked · ") + Name + (Category.Length == 0 ? "" : " — " + Category)
+            + (Suffix.Length == 0 ? "" : " · " + Suffix) + (Selectable ? "" : " (definition changed; preserved)");
+    }
+
     void AddUnlockTestingControls()
     {
         OverviewPanel.Children.Add(SectionHeader("Unlocks & progression"));
-        OverviewPanel.Children.Add(Note("Changes affect the working copy; use Save edited to export a separate file. "
-            + "Inventory edits do not claim rewards, alter UGC, or grant account permissions."));
-
-        var badge = _allProps.FirstOrDefault(p => p.Path == "/Main/PlayerCardBadgeId").Node;
-        var badgeRecords = _container.Career?.Records.Where(r => r.Name == ProfileUnlockTestState.BadgeRecordName).ToArray();
-        var badgeStatus = Note($"Badges — equipped ID: {badge?.DisplayValue() ?? "not found"}. "
-            + (badgeRecords?.Length == 1 ? $"Challenge record: {badgeRecords[0].Payload.Length:n0} bytes. " : "Challenge record unavailable/ambiguous. ")
-            + "Unlock editing is not enabled: the challenge layout still needs a controlled before/after comparison.");
-        badgeStatus.Name = "BadgeUnlockMappingStatus";
-        OverviewPanel.Children.Add(badgeStatus);
-
+        OverviewPanel.Children.Add(Note("Search and choose items below each button. Ctrl+A in a list selects its visible items. Save edited exports a separate file."));
         AddClothingUnlockControls();
         AddHornUnlockControls();
+        AddEmoteUnlockControls();
+        AddForzaLinkUnlockControls();
+        AddBadgeUnlockControls();
         AddCollectionJournalControls();
     }
 
@@ -39,73 +41,175 @@ public partial class ProfileEditorView
         IsEnabled = enabled, Opacity = enabled ? 1 : 0.45,
     };
 
-    void AddClothingUnlockControls()
+    void AddClothingUnlockControls() => AddUnlockPicker("Clothing", "UnlockAllClothesButton", "clothes",
+        () => CharacterClothingUnlockState.TryReadUnlocked(_container, out var ids)
+            ? CharacterClothingUnlockState.AllClothing.Where(c => !CharacterClothingUnlockState.IsEntitlementManaged(c.Id))
+                .Select(c => new UnlockItem(c.Id, ProfileInventoryNames.Get("Clothes", c.Id, c.Name), ClothingCategory(c.Slot), ids.Contains(c.Id))).ToArray() : null,
+        selected => { bool ok = CharacterClothingUnlockState.TryUnlockSelected(_container, selected, out var result); return (ok, result.Changed); },
+        "The two VIP-managed items, your outfit and existing NEW flags stay unchanged.");
+
+    void AddHornUnlockControls() => AddUnlockPicker("Horn", "UnlockAllHornsButton", "horns",
+        () => CarHornUnlockState.TryReadUnlocked(_container, out var ids)
+            ? CarHornUnlockState.AllHorns.Select(h => new UnlockItem(h.Id, ProfileInventoryNames.Get("Horns", h.Id, h.Name),
+                h.Category switch { 0 => "Standard", 1 => "Musical", _ => "Sound effects" }, ids.Contains(h.Id),
+                Detail: CollectionJournalState.RewardRequirementDescription(JournalRewardKind.Horn, h.Id),
+                Suffix: CollectionJournalState.RewardRequirementDescription(JournalRewardKind.Horn, h.Id).StartsWith("Journal:") ? "Journal linked" : "")).ToArray() : null,
+        selected => ApplyJournalRewards(JournalRewardKind.Horn, selected),
+        "Journal-linked selections also complete their requirements. Your equipped horn stays unchanged.",
+        linkedPreview: selected => PreviewJournalRewards(JournalRewardKind.Horn, selected));
+
+    void AddEmoteUnlockControls() => AddUnlockPicker("Emote", "UnlockAllEmotesButton", "emotes",
+        () => EmoteUnlockState.TryReadUnlocked(_container, out var ids)
+            ? EmoteUnlockState.AllEmotes.Select(e => new UnlockItem(e.Id, ProfileInventoryNames.Get("Emotes", e.Id, e.Name), "", ids.Contains(e.Id))).ToArray() : null,
+        selected => { bool ok = EmoteUnlockState.TryUnlockSelected(_container, selected, out int changed); return (ok, changed); },
+        "All three equipped emotes stay unchanged.");
+
+    void AddForzaLinkUnlockControls() => AddUnlockPicker("ForzaLink", "UnlockForzaLinkPhrasesButton", "Forza Link phrases",
+        () => ForzaLinkPhraseUnlockState.TryReadUnlocked(_container, out var ids)
+            ? ForzaLinkPhraseUnlockState.AllRewardPhrases
+                .Select(p => new UnlockItem(p.Id, p.Name, p.JournalReward ? "Journal reward" : "Other reward", ids.Contains(p.Id),
+                    Detail: CollectionJournalState.RewardRequirementDescription(JournalRewardKind.Phrase, p.Id))).ToArray() : null,
+        selected => ApplyJournalRewards(JournalRewardKind.Phrase, selected),
+        "Journal-linked selections also complete their requirements. Your chat slots stay unchanged.",
+        linkedPreview: selected => PreviewJournalRewards(JournalRewardKind.Phrase, selected));
+
+    (bool Success, int Changed) ApplyJournalRewards(JournalRewardKind kind, ulong[] selected)
     {
-        bool supported = CharacterClothingUnlockState.TryRead(_container, out var info);
-        var status = Note(supported
-            ? $"Save-managed wardrobe unlocked: {info.Unlocked} / {info.Total - info.EntitlementManaged}. {info.EntitlementManaged} VIP-managed items are preserved unchanged. Covers all clothing and accessory categories."
-            : "Clothing inventory layout is not safely recognized; no unlocks will be applied.");
-        status.Name = "ClothingUnlockStatus";
-        var button = TestButton("UnlockAllClothesButton", "Unlock all clothes", supported);
-        button.ToolTip = "Unlocks the 498 save-managed items in the 500-item wardrobe catalog. The VIP helmet/outfit keep their original states; license recognition stays with the game. Equipment, existing NEW flags, identity and progression wristbands are preserved.";
-        button.Click += (_, _) =>
-        {
-            if (!CharacterClothingUnlockState.TryRead(_container, out var preview))
-            {
-                Fail("unlock all clothes", new InvalidDataException("The clothing inventory is not safely recognized. Nothing was changed."));
-                return;
-            }
-            if (!_confirmUnlockTest($"Unlock all {preview.Total - preview.EntitlementManaged} save-managed clothing items? {preview.Missing} missing entries will be added and {preview.StoredLocked} stored locked entries will be unlocked. "
-                + "New grants use the observed 1,1 acquisition flags. Already-owned items, their existing NEW flags and your equipped outfit are preserved. "
-                + "The two VIP-managed items keep their original flags. This does not change identity settings, campaign wristbands, challenges, points, reward claims or account/DLC licenses. "
-                + "The catalog and save round trips are checked, but the all-clothes action still needs an in-game test.")) return;
-            try
-            {
-                if (!CharacterClothingUnlockState.TryUnlockAll(_container, out var result))
-                    throw new InvalidDataException("The clothing inventory is not safely recognized. Nothing was changed.");
-                _hasUnlockTestEdits |= result.Changed > 0;
-                CharacterClothingUnlockState.TryRead(_container, out var updated);
-                status.Text = $"{result.Added} clothing items added; {result.UnlockedExisting} stored locked items unlocked; {updated.Unlocked} / {updated.Total - updated.EntitlementManaged} save-managed items unlocked. VIP items and equipped outfit unchanged. Save edited to export separately.";
-                RefreshUnlockTestDisplays($"All-clothes test: {result.Added} items added, {result.UnlockedExisting} existing locked items unlocked; equipment, existing NEW flags, points and challenges preserved");
-            }
-            catch (Exception ex) { Fail("unlock all clothes", ex); }
-        };
-        OverviewPanel.Children.Add(button);
-        OverviewPanel.Children.Add(status);
+        if (!CollectionJournalState.TryUnlockRewards(_container, kind, selected, out var change, out string reason)) throw new InvalidDataException(reason);
+        return (true, change.Changed ? Math.Max(1, change.Added) : 0);
     }
 
-    void AddHornUnlockControls()
+    (bool Changed, string Detail) PreviewJournalRewards(JournalRewardKind kind, ulong[] selected)
     {
-        bool supported = CarHornUnlockState.TryRead(_container, out var info);
-        var status = Note(supported
-            ? $"Horns unlocked: {info.Unlocked} / {info.Total}. Includes standard, musical and sound-effect horns."
-            : "Horn inventory layout is not safely recognized; no unlocks will be applied.");
-        status.Name = "HornUnlockStatus";
-        var button = TestButton("UnlockAllHornsButton", "Unlock all horns", supported);
-        button.ToolTip = "Adds missing IDs from all 184 horns in the inspected game catalog. Preserves existing horn order and your equipped horn. No wheelspins, credits or challenges are changed.";
+        if (!CollectionJournalState.TryPreviewUnlockRewards(_container, kind, selected, out var change, out string reason)) throw new InvalidDataException(reason);
+        var j = change.Journal;
+        return (change.Changed, change.LinkedRewards == 0 ? "" :
+            $"\n\nJournal requirements: {change.Requirements}.\n{j.SelectedCompleted:n0} challenges and {j.AutomaticCompleted:n0} automatic bonuses will complete. " +
+            $"Native updates: {j.RacesUpdated} races, {j.PrStuntsUpdated} PR stunts, {j.StoriesUpdated} Story chapters, {j.BoardsUpdated} boards, {j.MascotsUpdated} mascots and {j.LandmarksUpdated} landmarks. " +
+            (j.JobLevel > 0 ? $"Food Delivery level {j.JobLevel}. " : "") + (j.RegionsUpdated ? "Regions discovered. " : "") +
+            "Points and wristbands update automatically. This edits local progress only: no online records, photos, cars, purchases or reward claims are created. " +
+            "Mapped PR PBs use the required star cutoff + 0–2%; better PBs are preserved. Stories use completion and stars, not invented times.");
+    }
+
+    static string ClothingCategory(string slot) => slot switch
+    {
+        "UpperBodyLayer1" => "Tops", "UpperBodyLayer2" => "Jackets", "LowerBody" => "Legs",
+        "Socks" => "Ankles", "Hat" => "Hats", "Eye" => "Eyes", "LeftWrist" => "Wrist",
+        "Dress" => "Dresses", "Outfit" => "Outfits", _ => slot,
+    };
+
+    void AddUnlockPicker(string kind, string buttonName, string title, Func<UnlockItem[]> read,
+        Func<ulong[], (bool Success, int Changed)> apply, string preservation,
+        Action<StackPanel, ListBox, Action> addDetails = null, Func<ulong[], string> preview = null,
+        Func<ulong[], (bool Changed, string Detail)> linkedPreview = null)
+    {
+        var rows = read();
+        var button = TestButton(buttonName, "Unlock selected " + title, false);
+        button.ToolTip = "Choose items in the list below. Ctrl-click for multiple; Ctrl+A in the list selects visible items only.";
+        var toggle = new ToggleButton
+        {
+            Name = kind + "UnlockPickerToggle", Content = "Choose " + title + " · 0 selected",
+            Style = (Style)FindResource("UnlockDropdownToggle"), Margin = new Thickness(0, 6, 0, 0),
+            HorizontalAlignment = HorizontalAlignment.Stretch, IsEnabled = rows != null, IsChecked = false,
+        };
+        var list = new ListBox
+        {
+            Name = kind + "UnlockList", SelectionMode = SelectionMode.Extended, MaxHeight = 260,
+            MinHeight = 110, Background = (System.Windows.Media.Brush)FindResource("Card2"),
+            Foreground = (System.Windows.Media.Brush)FindResource("Ink"), BorderThickness = new Thickness(0),
+            ItemContainerStyle = (Style)FindResource("UnlockListItem"), DisplayMemberPath = "Display",
+            IsEnabled = rows != null, IsTextSearchEnabled = true,
+        };
+        TextSearch.SetTextPath(list, "Name");
+        VirtualizingPanel.SetIsVirtualizing(list, true);
+        VirtualizingPanel.SetVirtualizationMode(list, VirtualizationMode.Recycling);
+        ScrollViewer.SetVerticalScrollBarVisibility(list, ScrollBarVisibility.Auto);
+        ScrollViewer.SetHorizontalScrollBarVisibility(list, ScrollBarVisibility.Disabled);
+        var search = new TextBox
+        {
+            Name = kind + "UnlockSearch", Style = (Style)FindResource("Input"),
+            Margin = new Thickness(4, 0, 4, 4), IsEnabled = rows != null,
+            ToolTip = "Search names, categories or descriptions. Filtering clears hidden selections. Esc clears the search.",
+        };
+        var searchLabel = Note("Search " + title); searchLabel.Margin = new Thickness(4, 0, 4, 2);
+        var matches = Note(""); matches.Name = kind + "UnlockSearchStatus"; matches.Margin = new Thickness(4, 0, 4, 4);
+        var panel = new StackPanel();
+        panel.Children.Add(searchLabel); panel.Children.Add(search); panel.Children.Add(matches); panel.Children.Add(list);
+        var dropdown = new Border
+        {
+            Name = kind + "UnlockDropdown", Child = panel, BorderBrush = (System.Windows.Media.Brush)FindResource("Line"),
+            BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(6), Padding = new Thickness(4),
+            Margin = new Thickness(0, 4, 0, 0), Visibility = Visibility.Collapsed,
+        };
+        dropdown.SetBinding(VisibilityProperty, new Binding("IsChecked") { Source = toggle, Converter = new BooleanToVisibilityConverter() });
+        var status = Note(""); status.Name = kind + "UnlockStatus";
+        OverviewPanel.Children.Add(button);
+        OverviewPanel.Children.Add(toggle);
+        OverviewPanel.Children.Add(dropdown);
+        OverviewPanel.Children.Add(status);
+
+        void SelectionChanged()
+        {
+            // Unsupported badge definitions cannot be selected, including via Ctrl+A.
+            foreach (var item in list.SelectedItems.OfType<UnlockItem>().Where(i => !i.Selectable).ToArray()) list.SelectedItems.Remove(item);
+            int count = list.SelectedItems.Count;
+            toggle.Content = "Choose " + title + " · " + count + " selected";
+            button.IsEnabled = rows != null && count > 0; button.Opacity = button.IsEnabled ? 1 : 0.45;
+        }
+        void Filter()
+        {
+            var selected = list.SelectedItems.OfType<UnlockItem>().Select(i => i.Id).ToHashSet();
+            string query = search.Text.Trim();
+            list.ItemsSource = rows?.Where(r => query.Length == 0 ||
+                    (r.Name + " " + r.Category + " " + r.Detail).Contains(query, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(r => r.Category).ThenBy(r => r.Name).ThenBy(r => r.Id).ToArray();
+            if (rows != null) foreach (var item in list.Items.OfType<UnlockItem>().Where(i => i.Selectable && selected.Contains(i.Id))) list.SelectedItems.Add(item);
+            matches.Text = rows == null ? "Search unavailable."
+                : list.Items.Count + " / " + rows.Length + " shown · Ctrl+A in the list selects visible items";
+            SelectionChanged();
+        }
+        void Refresh()
+        {
+            rows = read();
+            toggle.IsEnabled = list.IsEnabled = search.IsEnabled = rows != null;
+            status.Text = rows == null ? "This inventory layout is not safely recognized; unlocking is disabled."
+                : rows.Count(r => r.Unlocked) + " / " + rows.Length + " owned. " + preservation;
+            Filter();
+        }
+        search.TextChanged += (_, _) => Filter();
+        search.KeyDown += (_, e) => { if (e.Key == Key.Escape) { search.Clear(); e.Handled = true; } };
+        list.SelectionChanged += (_, _) => SelectionChanged();
+        list.CommandBindings.Add(new CommandBinding(ApplicationCommands.SelectAll,
+            (_, e) => { list.SelectedItems.Clear(); foreach (var item in list.Items.OfType<UnlockItem>().Where(i => i.Selectable)) list.SelectedItems.Add(item); e.Handled = true; },
+            (_, e) => { e.CanExecute = list.IsEnabled && list.Items.Count > 0; e.Handled = true; }));
+        list.InputBindings.Add(new KeyBinding(ApplicationCommands.SelectAll, Key.A, ModifierKeys.Control));
         button.Click += (_, _) =>
         {
-            if (!CarHornUnlockState.TryRead(_container, out var preview))
-            {
-                Fail("unlock all horns", new InvalidDataException("The horn inventory is not safely recognized. Nothing was changed."));
-                return;
-            }
-            if (!_confirmUnlockTest($"Unlock all {preview.Total} horns? {preview.Total - preview.Unlocked} missing horns will be added. "
-                + "Your equipped horn and existing inventory order are preserved. No wheelspins, credits, points, challenges, reward claims or account licenses are changed. "
-                + "The catalog and save round trips are checked, but all-horn availability and NEW indicators still need an in-game test.")) return;
             try
             {
-                if (!CarHornUnlockState.TryUnlockAll(_container, out int added))
-                    throw new InvalidDataException("The horn inventory is not safely recognized. Nothing was changed.");
-                _hasUnlockTestEdits |= added > 0;
-                CarHornUnlockState.TryRead(_container, out var updated);
-                status.Text = $"{added} horns added; {updated.Unlocked} / {updated.Total} unlocked. Equipped horn unchanged. Save edited to export separately.";
-                RefreshUnlockTestDisplays($"All-horns test: {added} horns added; equipped horn, existing order, credits, wheelspins and challenges preserved");
+                var chosen = list.SelectedItems.OfType<UnlockItem>().Where(i => i.Selectable).Select(i => i.Id).ToHashSet();
+                var latest = read();
+                if (latest == null) throw new InvalidDataException("The inventory layout is not safely recognized. Nothing was changed.");
+                var selected = latest.Where(i => i.Selectable && chosen.Contains(i.Id)).ToArray();
+                if (selected.Length == 0) { Log("Choose " + title + " in the list below the button.", "info"); return; }
+                int pending = selected.Count(i => !i.Unlocked);
+                var selection = selected.Select(i => i.Id).ToArray();
+                var linked = linkedPreview?.Invoke(selection) ?? default;
+                if (pending == 0 && !linked.Changed) { Log("Selected " + title + " are already unlocked; nothing changed.", "info"); return; }
+                string details = (preview?.Invoke(selection) ?? "") + linked.Detail;
+                if (!_confirmUnlockTest("Unlock " + pending + " selected " + title + "? " + preservation
+                    + " Account/DLC licenses and reward claims are unchanged. Save edited exports separately." + details)) return;
+                var result = apply(selection);
+                if (!result.Success) throw new InvalidDataException("The selected items are not safely supported. Nothing was changed.");
+                _hasUnlockTestEdits |= result.Changed > 0;
+                Refresh();
+                RefreshUnlockTestDisplays(linkedPreview == null ? title + ": " + result.Changed + " selected items unlocked" : title + ": selected inventory and linked Journal progress applied");
+                if (linkedPreview != null) { RefreshSaveStateDisplays(); _refreshCollectionJournalDisplay?.Invoke(); }
             }
-            catch (Exception ex) { Fail("unlock all horns", ex); }
+            catch (Exception ex) { Fail("unlock selected " + title, ex); }
         };
-        OverviewPanel.Children.Add(button);
-        OverviewPanel.Children.Add(status);
+        addDetails?.Invoke(panel, list, Refresh);
+        Refresh();
     }
 
     void RefreshUnlockTestDisplays(string message)

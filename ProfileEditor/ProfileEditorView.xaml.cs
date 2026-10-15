@@ -727,12 +727,10 @@ public partial class ProfileEditorView : UserControl
         OverviewPanel.Children.Add(SectionHeader("Everyday values"));
         int everyday = 0;
         everyday += AddProfileEdit("/Main/Credits", "Credits", "your spendable in-game credits") ? 1 : 0;
-        everyday += AddProfileEdit("/Main/Level", "Driver level", "your current driver level") ? 1 : 0;
-        everyday += AddProfileEdit("/Main/XP", "Driver XP", "experience earned toward driver progression") ? 1 : 0;
-        everyday += AddBxmlIntegerEdit("CarPerkSaveState", "UnspentSkillPointsTotal", "Unspent skill points",
-            "skill points currently available to spend") ? 1 : 0;
-        everyday += AddBxmlIntegerEdit("CarPerkSaveState", "SkillPointsTotal", "Lifetime skill points",
-            "total skill points earned across this profile") ? 1 : 0;
+        everyday += AddDriverXpControls();
+        everyday += AddConsumableEdit(ProfileConsumableState.Kind.SkillPoints, "Skill points", "points currently available to spend") ? 1 : 0;
+        everyday += AddConsumableEdit(ProfileConsumableState.Kind.Wheelspins, "Wheelspins", "normal spins available; prize history stays unchanged") ? 1 : 0;
+        everyday += AddConsumableEdit(ProfileConsumableState.Kind.SuperWheelspins, "Super Wheelspins", "super spins available; VIP grants stay unchanged") ? 1 : 0;
         if (everyday == 0)
             OverviewPanel.Children.Add(Note("This save does not expose the usual credits, level, XP or skill-point fields in a safely editable format."));
 
@@ -822,9 +820,11 @@ public partial class ProfileEditorView : UserControl
                 ("SeasonalHorizonLifeEventsSaveState", "seasonal events"),
                 ("TreasureHuntChallengeSaveState", "Treasure Hunts"),
                 ("PhotoChallengeSaveState", "Photo Challenges"),
+#if !PROFILE_UNLOCK_TESTING
                 ("BadgeChallengeSaveState", "badges"),
                 ("CarHornSaveState", "car horns"),
                 ("EmoteSaveState", "emotes"),
+#endif
             }.Where(item => available.Contains(item.Item1)).Select(item => item.Item2).ToList();
             if (friendlyRecords.Count > 0)
                 OverviewPanel.Children.Add(Note("This save also contains: " + string.Join(", ", friendlyRecords) + ". "
