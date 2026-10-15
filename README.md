@@ -86,16 +86,7 @@ Badge earned dates use **UTC**. Preserve real dates, follow the displayed playli
 
 Missing or changed definitions stay read-only. Unlocks do not grant DLC licenses; Journal entries do not add actual cars, photos or online results.
 
-<details>
-<summary>Profile Editor screenshots</summary>
-
-![Balances and XP preview](Screenshots/profile-editor-xp-balances-v1.2.6.3.png)
-
-![Road discovery and item unlock lists](Screenshots/profile-editor-unlocks-v1.2.6.3.png)
-
-![Collection Journal selection](Screenshots/profile-editor-journal-v1.2.6.3.png)
-
-</details>
+See the [Profile Editor screenshots and detailed help](docs/ADVANCED_GUIDE.md#section-5-profile-editor) in the advanced guide.
 
 ### Garage Viewer: manage owned cars
 
@@ -129,9 +120,19 @@ Do not reverse donor and target. Save Swap does not grant DLC ownership or guara
 - **Re-encrypt:** load the edited output and choose its matching original **template** when asked. A template is the untouched encrypted file used to rebuild the container.
 - **ZIP rebuild:** only use supported round-trip workspaces. Keep their original/template metadata; do not add/remove entries. Track/CMS extractions are not normal rebuildable ZIPs.
 - **Share cars:** put a full modified GameDB in the top area → **Export Car Related DB** → select cars. To import, put the receiving full GameDB on top, the car donor in the lower merge area, then **Import car DB**. A car donor is not a complete GameDB to install.
-- **After a game update:** new clean GameDB on top, old modded full GameDB below → **Merge updated DB**. Review the preview. This needs a matching stock reference.
+- **After a game update:** use **Merge updated DB** to keep your mods with the new game content. Follow the steps below.
 
 Leave **Drop & rebuild** off unless you intend to replace the donor cars' existing mods. General table/row merging is advanced; follow the [detailed merge guide](docs/ADVANCED_GUIDE.md#merge-another-database).
+
+### Merge updated DB: keep your mods after a game update
+
+Close the game and back up your modded GameDB first.
+
+1. In **Crypto**, drop the **new clean** `<FH6>\media\stripped\gamedbRC.slt` into the **top** drop zone. Drop your **current modded** `<FH6>\MediaPC\stripped\gamedbRC.slt` into the lower **Optional** drop zone. Click **Merge updated DB**.
+2. Review the preview, then click **Create updated DB**. If asked for a clean reference, use an untouched full GameDB from the **same old version as your modded DB**.
+3. In `MediaPC\stripped`, rename your old modded file to `gamedbRC.slt.bak` (keep any existing backup; use a different backup name if needed). Copy the new `.updatedmerge.<timestamp>.slt` from the output folder into `MediaPC\stripped` and rename that copy to **gamedbRC.slt**. Launch the game and check your mods and the new content.
+
+The result saves beside the top input unless you choose an **Output folder**. Do not replace the clean original in `media\stripped`. See the [three-step guide with photos](docs/ADVANCED_GUIDE.md#merge-after-a-game-update) for examples.
 
 ### DB Browser: manual database editing
 

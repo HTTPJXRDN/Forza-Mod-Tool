@@ -330,11 +330,34 @@ The result follows the receiving DB's format: `.slt` in produces an encrypted `.
 
 ### Merge after a game update
 
-1. Keep your old modded GameDB and obtain a clean GameDB for the newly installed game version.
-2. Drop the **clean updated DB into the top area**.
-3. Drop your **old modded DB into the lower merge area**.
-4. Click **Merge updated DB**, review the source names and preview, and confirm.
-5. Test the new output before using it as your active GameDB. Both original files remain available.
+Use this to carry your current mods into a newer GameDB without losing the update's new content. **Close the game and back up both GameDB files first.** Leave the clean original under `media\stripped` untouched.
+
+#### Step 1: load the new and modded databases
+
+- Open **Crypto**. Drag the **new clean** `<FH6>\media\stripped\gamedbRC.slt` into the **top** drop zone.
+- Drag your **current modded** `<FH6>\MediaPC\stripped\gamedbRC.slt` into the lower **Optional** drop zone.
+- Click **Merge updated DB**, not the general **Merge** button.
+
+![Step 1: new clean GameDB on top, current modded GameDB below, then Merge updated DB](../Screenshots/merge-updated-db-step-1.png)
+
+#### Step 2: create the updated database
+
+- Check the two input filenames and the additions/edits/deletions preview.
+- If asked for a clean reference, select an **untouched full GameDB from the same old game version as your modded DB**. Do not use the new update or another modded DB as that reference.
+- Click **Create updated DB**. Both inputs stay unchanged.
+
+![Step 2: review the merge preview and click Create updated DB](../Screenshots/merge-updated-db-step-2.png)
+
+#### Step 3: install the new file
+
+- Find the generated SLT in your selected **Output folder**, or beside the **top input** if no output folder was chosen. Its name looks like `gamedbRC.updatedmerge.<timestamp>.slt`; the prefix follows your top input's filename.
+- In `<FH6>\MediaPC\stripped`, rename the old modded `gamedbRC.slt` to `gamedbRC.slt.bak`. If that backup already exists, keep it and give this backup a different name.
+- **Copy** the generated SLT into `<FH6>\MediaPC\stripped` and rename the copy to exactly **gamedbRC.slt**. Do not replace anything under `media\stripped`.
+- Launch the game and check your mods and the new content. If anything is wrong, close the game and restore your backed-up modded file.
+
+![Step 3: back up the old modded GameDB and rename the updated-merge output to gamedbRC.slt](../Screenshots/merge-updated-db-step-3.png)
+
+The photos show example filenames from an earlier app version. Your timestamp and filename prefix may differ; the three-step workflow is the same. For FH6 SLT inputs, the output is already encrypted: no separate decrypt/re-encrypt step is needed.
 
 The app matches your old modded DB's `VersionInfo.database_version` to an embedded clean reference from that same game version. It compares the old clean reference with your modded DB, then applies only your additions, edited fields and deliberate deletions onto the new clean DB. Untouched official updates, new cars and the updated version stamp are retained. This action accepts SLT or SQLite in either area and produces the top file's format.
 
