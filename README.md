@@ -2,6 +2,27 @@
 
 Edit supported Forza Horizon 6 and Forza Motorsport files. **Profile Editor, Garage Viewer and Save Swap are FH6-only.**
 
+## Table of contents
+
+- [Start here](#start-here)
+- [Back up first](#back-up-first)
+- [Where to find your files](#where-to-find-your-files)
+  - [FH6 save location](#fh6-save-location)
+- [Choose a tab](#choose-a-tab)
+  - [Car Editor](#car-editor-change-a-car)
+  - [Profile Editor](#profile-editor-balances-unlocks-and-journal)
+  - [Garage Viewer](#garage-viewer-manage-owned-cars)
+  - [Animation Swap](#animation-swap-change-animations)
+  - [Save Swap](#save-swap-use-another-saves-progress)
+  - [Crypto](#crypto-convert-or-merge-files)
+  - [Merge an updated DB with your modded DB](#merge-updated-db-keep-your-mods-after-a-game-update)
+  - [DB Browser](#db-browser-manual-database-editing)
+- [Install an edited save](#install-an-edited-save)
+- [Motorsport differences](#motorsport-the-important-differences)
+- [Troubleshooting](#if-something-goes-wrong)
+- [Disclaimer](#disclaimer)
+- [Credits](#credits)
+
 ## Start here
 
 1. Download the **app ZIP** from Releases, not a Source or GitHub upload ZIP.
