@@ -29,16 +29,16 @@ Edit supported Forza Horizon 6 and Forza Motorsport files. **Profile Editor, Gar
 2. Extract the whole ZIP into a normal folder.
 3. Run **FH6ModStudio.exe**. Keep the included DLLs, animation helper and `licenses` folder beside it.
 
-The app EXE is protected and runs on Windows 10/11 x64 without a separate .NET installation. The ZIP is a normal archive, not password-encrypted. Source/docs packages are for building or updating GitHub, not running the app.
+The app EXE runs on Windows 10/11 x64 without a separate .NET installation. The ZIP is a normal archive, not password-encrypted.
 
 ## Back up first
 
-- **Back up the entire save folder**, not just `C_ProfileData`. Also back up every game file you plan to replace.
+- **Back up `C_ProfileData`. Also back up every game file you plan to replace.
 - Keep untouched backups outside the game folder. Never overwrite your only backup.
 - Work on copies. Close the game before installing edited files.
 - Test a small change first. If the game crashes or rejects it, restore the backup.
 
-The tool edits a private working copy. **Apply does not install a mod, and exporting does not replace your live save.** You install the exported file yourself.
+The tool edits a private working copy. **Apply does not install a mod, and exporting does not replace your live save or files.** You install the exported file yourself.
 
 ## Where to find your files
 
