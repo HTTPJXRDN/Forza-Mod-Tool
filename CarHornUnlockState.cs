@@ -9,12 +9,13 @@ public static class CarHornUnlockState
     const string RecordName = "CarHornSaveState";
     const int MaxHorns = 10_000;
     public sealed record Horn(ulong Id, string Name, int Category);
-    public static IReadOnlyList<Horn> AllHorns => CarHornCatalog.Items;
+    public static IReadOnlyList<Horn> AllHorns => ProfileGameData.Current?.Horns ?? CarHornCatalog.Items;
     public readonly record struct Status(int Unlocked, int Total, int InventoryEntries);
     sealed record Inventory(byte[] Header, List<ulong> Items);
 
     public static bool TryRead(ProfileContainer? container, out Status status)
     {
+        using var definitions = ProfileGameData.Use(container);
         status = default;
         if (!TryRecord(container, out var record) || !TryParse(record!.Payload, out var inventory)) return false;
         var ids = inventory!.Items.ToHashSet();
@@ -23,10 +24,14 @@ public static class CarHornUnlockState
     }
 
     public static bool TryUnlockAll(ProfileContainer? container, out int added)
-        => TryUnlockSelected(container, AllHorns.Select(h => h.Id), out added);
+    {
+        using var definitions = ProfileGameData.Use(container);
+        return TryUnlockSelected(container, AllHorns.Select(h => h.Id), out added);
+    }
 
     public static bool TryReadUnlocked(ProfileContainer? container, out ulong[] ids)
     {
+        using var definitions = ProfileGameData.Use(container);
         ids = Array.Empty<ulong>();
         if (!TryRecord(container, out var record) || !TryParse(record!.Payload, out var inventory)) return false;
         ids = inventory!.Items.ToArray(); return true;
@@ -34,6 +39,7 @@ public static class CarHornUnlockState
 
     public static bool TryUnlockSelected(ProfileContainer? container, IEnumerable<ulong>? selectedIds, out int added)
     {
+        using var definitions = ProfileGameData.Use(container);
         added = 0;
         var selected = selectedIds?.ToHashSet();
         if (selected is null || selected.Count == 0 || selected.Any(id => !AllHorns.Any(h => h.Id == id))) return false;

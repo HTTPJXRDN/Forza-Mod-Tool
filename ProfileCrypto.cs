@@ -21,6 +21,7 @@ public static class ProfileCrypto
         catch(InvalidDataException) {return false;} catch(IOException) {return false;} catch(UnauthorizedAccessException) {return false;}
     }
     public static bool IsProfileDatabase(string path) {
+        if(Fh5ProfileCrypto.IsDatabaseExport(path))return false;
         try {
             using var file=new FileStream(path,FileMode.Open,FileAccess.Read,FileShare.ReadWrite|FileShare.Delete);Span<byte> header=stackalloc byte[16];
             if(file.Read(header)!=16||!header.SequenceEqual("SQLite format 3\0"u8))return false;
@@ -117,6 +118,7 @@ public static class ProfileCrypto
     }
     /// <summary>Reinsert an edited SQLite snapshot; keep all three other template sections byte-exact.</summary>
     public static void EncryptDatabase(string input,string template,string output) {
+        if(Fh5ProfileCrypto.IsDatabaseExport(input))throw new InvalidDataException("FH5 save databases are inspection-only and cannot be re-encrypted with an FH6 profile template.");
         string fingerprint=DatabaseFingerprint(input);
         byte[] original=Read(template);byte[] originalPayload=DecryptValidated(original);
         var profile=ProfileContainer.Parse(originalPayload);

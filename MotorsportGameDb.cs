@@ -197,7 +197,17 @@ public static class MotorsportGameDb
                 ?? throw new InvalidDataException("Missing embedded Motorsport crypto context.");
 #endif
             using JsonDocument document = JsonDocument.Parse(stream);
-            return new Cipher(document.RootElement, inverse);
+            var cipher = new Cipher(document.RootElement, inverse);
+            if (name.StartsWith("fh5-", StringComparison.Ordinal))
+            {
+                var vectors = document.RootElement.GetProperty("testVectors").EnumerateArray().ToArray();
+                if (vectors.Length != 32) throw new InvalidDataException("Missing verified FH5 cipher vectors.");
+                foreach (var vector in vectors)
+                    if (cipher.Forward(Read(Convert.FromHexString(vector.GetProperty("input").GetString()!))) !=
+                        Read(Convert.FromHexString(vector.GetProperty("output").GetString()!)))
+                        throw new InvalidDataException("FH5 cipher self-test failed.");
+            }
+            return cipher;
         }
 
         public UInt128 Forward(UInt128 value)

@@ -12,13 +12,19 @@ public static class BadgeEarnedDates
 
     public static Window? GetWindow(uint badgeId)
     {
+        var live = ProfileGameData.Current?.Badges.SingleOrDefault(b => b.Id == badgeId);
+        var known = BadgeCatalog.Items.SingleOrDefault(b => b.Id == badgeId);
+        if (live != null && (known == null || live.Version != known.Version || live.LinkedId != known.LinkedId
+            || !live.Objectives.SequenceEqual(known.Objectives))) return null;
         // These ChallengeDataSet OR objectives test Seasons/UnwrappedLSPWeek
         // for equality to four consecutive weeks. EndUtc is exclusive.
         int firstWeek = badgeId switch { 69 => 0, 71 => 4, 73 => 8, 74 => 12, 76 => 16, _ => -1 };
         return firstWeek < 0 ? null : new(PlaylistStart.AddDays(firstWeek * 7), PlaylistStart.AddDays((firstWeek + 4) * 7));
     }
 
-    public static bool IsPlaylist(uint badgeId) => PlaylistIds.Contains(badgeId);
+    public static bool IsPlaylist(uint badgeId) => PlaylistIds.Contains(badgeId)
+        || ProfileGameData.Current?.Badges.Any(b => b.Id == badgeId && (b.Category == "Festival Playlist"
+            || !BadgeCatalog.Items.Any(known => known.Id == badgeId))) == true;
 
     internal static bool TryChoose(uint badgeId, DateTimeOffset? requested, DateTimeOffset now,
         out DateTimeOffset earnedUtc, out string error)

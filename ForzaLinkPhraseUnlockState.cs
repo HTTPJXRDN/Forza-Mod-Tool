@@ -11,12 +11,13 @@ public static class ForzaLinkPhraseUnlockState
     const int SlotsPerContext = 4;
     const int MaxPhrases = 10_000;
     public sealed record Phrase(ulong Id, string Name, bool JournalReward);
-    public static IReadOnlyList<Phrase> AllRewardPhrases => ForzaLinkPhraseCatalog.Items;
+    public static IReadOnlyList<Phrase> AllRewardPhrases => ProfileGameData.Current?.Phrases ?? ForzaLinkPhraseCatalog.Items;
     public readonly record struct Status(int Unlocked, int Total, int JournalProtected, int InventoryEntries);
     sealed record Inventory(byte[] Header, List<ulong> Items);
 
     public static bool TryRead(ProfileContainer? container, out Status status)
     {
+        using var definitions = ProfileGameData.Use(container);
         status = default;
         if (!TryRecord(container, out var record) || !TryParse(record!.Payload, out var inventory)) return false;
         var ids = inventory!.Items.ToHashSet();
@@ -26,10 +27,14 @@ public static class ForzaLinkPhraseUnlockState
     }
 
     public static bool TryUnlockNonJournal(ProfileContainer? container, out int added)
-        => TryUnlockSelected(container, AllRewardPhrases.Where(p => !p.JournalReward).Select(p => p.Id), out added);
+    {
+        using var definitions = ProfileGameData.Use(container);
+        return TryUnlockSelected(container, AllRewardPhrases.Where(p => !p.JournalReward).Select(p => p.Id), out added);
+    }
 
     public static bool TryReadUnlocked(ProfileContainer? container, out ulong[] ids)
     {
+        using var definitions = ProfileGameData.Use(container);
         ids = Array.Empty<ulong>();
         if (!TryRecord(container, out var record) || !TryParse(record!.Payload, out var inventory)) return false;
         ids = inventory!.Items.ToArray(); return true;
@@ -45,6 +50,7 @@ public static class ForzaLinkPhraseUnlockState
 
     static bool TryUnlockSelectedCore(ProfileContainer? container, IEnumerable<ulong>? selectedIds, bool includeJournal, out int added)
     {
+        using var definitions = ProfileGameData.Use(container);
         added = 0;
         var selected = selectedIds?.ToHashSet();
         if (selected is null || selected.Count == 0 || selected.Any(id => !AllRewardPhrases.Any(p => p.Id == id && (includeJournal || !p.JournalReward)))) return false;
@@ -109,11 +115,14 @@ public static class ForzaLinkPhraseUnlockState
         if (offset > bytes.Length - 4) return false;
         uint count = U32(bytes, offset); int itemsOffset = offset + 4;
         if (count > MaxPhrases || bytes.Length != itemsOffset + count * 8L) return false;
-        var items = new List<ulong>(); var unique = new HashSet<ulong>();
+        // Authentic post-reward saves can repeat ownership IDs. Ownership is a
+        // set to callers, but the serialized inventory is an ordered list: keep
+        // its multiplicity verbatim rather than rejecting or normalizing it.
+        var items = new List<ulong>();
         for (int i = 0; i < count; i++)
         {
             ulong id = U64(bytes, itemsOffset + i * 8);
-            if (id == 0 || !unique.Add(id)) return false;
+            if (id == 0) return false;
             items.Add(id);
         }
         var parsed = new Inventory(bytes[..offset], items);

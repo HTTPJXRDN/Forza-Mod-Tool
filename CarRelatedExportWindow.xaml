@@ -36,7 +36,7 @@
             </Grid>
             <StackPanel Grid.Row="1" Margin="16,14,16,10">
                 <TextBlock x:Name="SourceText" FontSize="12" Foreground="{StaticResource Dim}" TextTrimming="CharacterEllipsis"/>
-                <TextBlock Text="Choose one or more cars with Ctrl-click / Shift-click (Ctrl+A selects the visible list). All selected cars go into ONE SQLite donor, including their stock bodies and unchanged rows needed for import."
+                <TextBlock Text="Ctrl/Shift-click cars to export into one SQLite donor. Includes related upgrades, components, physics curves and DB registrations. Thumbnail paths are preserved; car ZIPs and other external files are shared separately."
                            TextWrapping="Wrap" Margin="0,8,0,0"/>
                 <TextBlock Text="Merge-only file: use Import car DB for a one-click import. Do not re-encrypt this partial GameDB directly for the game."
                            Foreground="{StaticResource Pink}" TextWrapping="Wrap" Margin="0,6,0,0"/>

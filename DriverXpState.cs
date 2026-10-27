@@ -2,7 +2,7 @@ using System.Globalization;
 
 namespace FH6LocalCryptoTool;
 
-/// <summary>PlayerXPLevels-backed preview. Does not grant rewards or alter the legacy Main/Level property.</summary>
+/// <summary>PlayerXPLevels-backed preview and synchronized earned-XP totals; no level-up reward grants.</summary>
 public static class DriverXpState
 {
     // Installed PlayerXPLevels (2026-10-14), grouped contiguous segments by
@@ -39,16 +39,22 @@ public static class DriverXpState
     }
 
     public static bool TrySet(ProfileContainer? container, uint xp, out bool changed)
+        => TrySet(container, xp, out changed, out _);
+
+    public static bool TryPreview(ProfileContainer? container, uint xp, out Level? level, out string reason)
+    {
+        level = null;
+        if (!ProfileXpEdit.TryDriver(container, xp, out _, out reason)) return false;
+        level = Calculate(xp); return true;
+    }
+
+    public static bool TrySet(ProfileContainer? container, uint xp, out bool changed, out string reason)
     {
         changed = false;
-        if (!TryField(container, out var field) || !TryRead(container, out var old)) return false;
-        if (old!.Xp == xp) return true;
-        var staged = ProfileContainer.Parse(container!.Serialize());
-        if (!TryField(staged, out var next) || !next!.TrySetFromText(xp.ToString(CultureInfo.InvariantCulture))) return false;
-        byte[] bytes = staged.Serialize(); var verified = ProfileContainer.Parse(bytes);
-        if (!verified.Serialize().AsSpan().SequenceEqual(bytes) || !TryRead(verified, out var check) || check!.Xp != xp) return false;
-        if (!field!.TrySetFromText(xp.ToString(CultureInfo.InvariantCulture))) return false;
-        changed = true; return true;
+        // Do not short-circuit when Main/XP already matches: re-applying repairs
+        // the ledger/counters left inconsistent by older versions of the editor.
+        if (!ProfileXpEdit.TryDriver(container, xp, out var edit, out reason)) return false;
+        return edit!.TryCommit(container!, out changed, out reason);
     }
 
     static bool TryField(ProfileContainer? container, out PropertyTree.PropertyNode? field)

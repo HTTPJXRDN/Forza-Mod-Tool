@@ -14,7 +14,7 @@ public static class CharacterClothingUnlockState
     const string Serializer = "CharacterCustomisationState";
     const int MaxItems = 10_000;
     public sealed record Clothing(ulong Id, string Name, string Slot);
-    public static IReadOnlyList<Clothing> AllClothing => CharacterClothingCatalog.Items;
+    public static IReadOnlyList<Clothing> AllClothing => ProfileGameData.Current?.Clothing ?? CharacterClothingCatalog.Items;
     // The game resets these VIP-themed entries to a different first-flag state
     // despite inventory grants. Preserve their full state; this editor does not
     // represent or repair ownership of the VIP entitlement.
@@ -31,6 +31,7 @@ public static class CharacterClothingUnlockState
 
     public static bool TryRead(ProfileContainer? container, out Status status)
     {
+        using var definitions = ProfileGameData.Use(container);
         status = default;
         if (!TryRecord(container, out var record) || !TryParse(record!.Payload, out var inventory)) return false;
         int unlocked = 0, missing = 0, storedLocked = 0;
@@ -49,10 +50,14 @@ public static class CharacterClothingUnlockState
     /// non-wardrobe items, rewards and account. No save or game file is written.
     /// </summary>
     public static bool TryUnlockAll(ProfileContainer? container, out UnlockResult result)
-        => TryUnlockSelected(container, AllClothing.Where(c => !IsEntitlementManaged(c.Id)).Select(c => c.Id), out result);
+    {
+        using var definitions = ProfileGameData.Use(container);
+        return TryUnlockSelected(container, AllClothing.Where(c => !IsEntitlementManaged(c.Id)).Select(c => c.Id), out result);
+    }
 
     public static bool TryReadUnlocked(ProfileContainer? container, out ulong[] ids)
     {
+        using var definitions = ProfileGameData.Use(container);
         ids = Array.Empty<ulong>();
         if (!TryRecord(container, out var record) || !TryParse(record!.Payload, out var inventory)) return false;
         ids = inventory!.Items.Where(p => p.Value.First == 1).Select(p => p.Key).ToArray(); return true;
@@ -60,6 +65,7 @@ public static class CharacterClothingUnlockState
 
     public static bool TryUnlockSelected(ProfileContainer? container, IEnumerable<ulong>? selectedIds, out UnlockResult result)
     {
+        using var definitions = ProfileGameData.Use(container);
         result = default;
         var selected = selectedIds?.ToHashSet();
         if (selected is null || selected.Count == 0 || selected.Any(id => !AllClothing.Any(c => c.Id == id) || IsEntitlementManaged(id))) return false;

@@ -10,7 +10,9 @@ public static partial class CollectionJournalState
     const string RecordName = "CollectionCampaignSaveState";
     const string Serializer = "BaseChallengeSaveState";
     static readonly Dictionary<ulong, CollectionJournalCatalog.Challenge> Definitions = CollectionJournalCatalog.Data.Challenges.ToDictionary(c => c.Id);
+    static Dictionary<ulong, CollectionJournalCatalog.Challenge> ActiveDefinitions => ProfileGameData.Current?.Challenges ?? Definitions;
     static readonly Dictionary<ulong, CollectionJournalCatalog.Category> Categories = CollectionJournalCatalog.Data.Categories.ToDictionary(c => c.Id);
+    static Dictionary<ulong, CollectionJournalCatalog.Category> ActiveCategories => ProfileGameData.Current?.Categories ?? Categories;
     static readonly HashSet<string> AllowedRecords = new[] { RecordName, "Stats", "PlayerWristbandSaveState", "CampaignUnlockSaveState", "CareerState" }.Concat(ExplorationProgressState.Records).ToHashSet(StringComparer.Ordinal);
     public sealed record Row(ulong Id, string Campaign, string Category, string Name, string Objective, string Subtitle, int Points, bool Completed, bool Automatic,
         bool StateKnown = true, bool Supported = true, string Compatibility = "Supported")
@@ -22,55 +24,63 @@ public static partial class CollectionJournalState
         bool PartialCatalog = false, int SavedEntries = 0, string CompatibilityNote = "");
     public readonly record struct Change(int SelectedCompleted, int AutomaticCompleted, int PreviousFestivalPoints, int FestivalPoints,
         int PreviousDiscoveryPoints, int DiscoveryPoints, byte PreviousBand, byte Band, bool Changed, int RacesUpdated = 0, int PrStuntsUpdated = 0, int JobLevel = 0,
-        int BoardsUpdated = 0, int MascotsUpdated = 0, int LandmarksUpdated = 0, bool RegionsUpdated = false, int StoriesUpdated = 0);
+        int BoardsUpdated = 0, int MascotsUpdated = 0, int LandmarksUpdated = 0, bool RegionsUpdated = false, int StoriesUpdated = 0, int PromoCarsUpdated = 0);
     sealed record Objective(ulong Id, int FlagOffset, int ValueOffset, byte Tag);
     sealed record Entry(CollectionJournalCatalog.Challenge Definition, Objective[] Objectives, int TailOffset, bool Supported = true, uint SavedVersion = 0);
     sealed record State(BinaryCareer.Record Record, byte[] Payload, Entry[] Entries, byte[] Metadata, bool PartialCatalog = false);
     sealed record AttributeEdit(Bxml.Node Node, string Value);
     sealed record PropertyEdit(PropertyTree.PropertyNode Node, byte[] Bytes);
-    sealed record Plan(List<(BinaryCareer.Record Record, byte[] Bytes)> Records, List<AttributeEdit> Attributes, Change Result, List<PropertyEdit>? Properties = null, ProfileContainer? Staged = null);
+    sealed record Plan(List<(BinaryCareer.Record Record, byte[] Bytes)> Records, List<AttributeEdit> Attributes, Change Result, List<PropertyEdit>? Properties = null, ProfileContainer? Staged = null, byte[]? Database = null);
 
     public static bool TryRead(ProfileContainer? container, out View? view, out string reason)
     {
+        using var catalogScope = ProfileGameData.Use(container);
         view = null;
         if (!TryState(container, out var state, out reason) || !TryStateTotals(container!, state!, out var totals, out reason)) return false;
         var points = Points(state!);
-        var rows = state!.Entries.Select(e =>
+        var rows = state!.Entries.Where(e => !CollectionJournalCarPolicy.Excluded(e.Definition)).Select(e =>
         {
-            var category = Categories[e.Definition.Category];
+            var category = ActiveCategories.GetValueOrDefault(e.Definition.Category);
+            if (category is null) return new Row(e.Definition.Id, "Unknown", "Unmapped content", e.Definition.Name, e.Definition.Description, "", 0, Completed(state.Payload, e), false, Supported: false, Compatibility: "Read-only: no matching game definition");
             return new Row(e.Definition.Id, category.Festival ? "Horizon Festival" : "Discover Japan", FriendlyCategory(category),
                 e.Definition.Name, e.Definition.Description, e.Definition.Subtitle, e.Definition.Points, Completed(state.Payload, e), Automatic(e.Definition),
-                Supported: e.Supported, Compatibility: e.Supported ? "Supported" : $"Read-only: saved v{e.SavedVersion}, catalog v{e.Definition.Version}");
+                Supported: e.Supported, Compatibility: e.Supported ? "Supported" : "Read-only: definition or native progression mapping differs");
         }).Concat(MissingRows(state.Entries.Select(e => e.Definition.Id).ToHashSet(), "Not present in this save")).ToArray();
-        string note = state.PartialCatalog ? $"{state.Entries.Length:n0} saved entries · {Definitions.Count - state.Entries.Length:n0} not present · {state.Entries.Count(e => !e.Supported):n0} changed definitions preserved. Edits add verified points only." : "";
+        string note = state.PartialCatalog ? $"{state.Entries.Length:n0} saved entries · {ActiveDefinitions.Keys.Except(state.Entries.Select(e => e.Definition.Id)).Count():n0} not present · {state.Entries.Count(e => !e.Supported):n0} changed definitions preserved. Edits add verified points only." : "";
         view = new(rows, totals![FestivalKey], totals[DiscoveryKey], rows.Count(r => r.StateKnown && r.Completed),
-            Categories.Values.Where(c => totals.ContainsKey(CategoryKey(c))).All(c => totals[CategoryKey(c)] == points.GetValueOrDefault(c.Id)) &&
+            ActiveCategories.Values.Where(c => totals.ContainsKey(CategoryKey(c))).All(c => totals[CategoryKey(c)] == points.GetValueOrDefault(c.Id)) &&
             totals[FestivalKey] == Festival(points) && totals[DiscoveryKey] == Discovery(points), state.PartialCatalog, state.Entries.Length, note);
         return true;
     }
 
     public static bool TryPreview(ProfileContainer? container, IEnumerable<ulong> ids, out Change change, out string reason)
     {
+        using var catalogScope = ProfileGameData.Use(container);
         change = default;
         if (!TryPlan(container, ids, out var plan, out reason)) return false;
         change = plan!.Result;
         return true;
     }
 
-    public static bool TryComplete(ProfileContainer? container, IEnumerable<ulong> ids, out Change change, out string reason)
+    public static bool TryComplete(ProfileContainer? container, IEnumerable<ulong> ids, out Change change, out string reason, Action<byte[]>? commitDatabase = null)
     {
+        using var catalogScope = ProfileGameData.Use(container);
         change = default;
         if (!TryPlan(container, ids, out var plan, out reason)) return false;
         // Every record and attribute has already been validated on a private
         // parsed clone. Commit only the scoped differences, keeping original UI
         // node references and all unrelated pending edits intact.
-        CommitPlan(container!, plan!);
+        CommitPlan(container!, plan!, commitDatabase);
         change = plan!.Result;
         return true;
     }
 
-    static void CommitPlan(ProfileContainer container, Plan plan)
+    static void CommitPlan(ProfileContainer container, Plan plan, Action<byte[]>? commitDatabase = null)
     {
+        using var catalogScope = ProfileGameData.Use(container);
+        // The UI owns an open working SQLite connection. Commit its validated
+        // database first; a failure must leave Journal/progression edits untouched.
+        if (plan.Database != null) { commitDatabase?.Invoke(plan.Database); container.Database = plan.Database; }
         foreach (var edit in plan.Attributes) container.SaveState!.SetAttribute(edit.Node, "value", edit.Value);
         foreach (var edit in plan.Records) container.Career!.ReplacePayload(edit.Record, edit.Bytes);
         foreach (var edit in plan.Properties ?? new()) { edit.Node.RawValue = (byte[])edit.Bytes.Clone(); edit.Node.Edited = true; }
@@ -78,13 +88,16 @@ public static partial class CollectionJournalState
 
     static bool TryPlan(ProfileContainer? container, IEnumerable<ulong> ids, out Plan? plan, out string reason)
     {
+        using var catalogScope = ProfileGameData.Use(container);
         plan = null;
         reason = "Journal layout or progression fields are not safely recognized; nothing was changed.";
         if (!TryState(container, out var originalState, out reason) || !TryStateTotals(container!, originalState!, out var oldTotals, out reason)) return false;
         var selected = ids?.ToHashSet();
-        if (selected is null || selected.Count == 0 || selected.Count > Definitions.Count || selected.Any(id => !Definitions.ContainsKey(id)))
+        if (selected is null || selected.Count == 0 || selected.Count > ActiveDefinitions.Count || selected.Any(id => !ActiveDefinitions.ContainsKey(id)))
         { reason = "Select at least one mapped journal challenge."; return false; }
-        var staged = ProfileContainer.Parse(container!.Serialize());
+        if (selected.Any(id => CollectionJournalCarPolicy.Excluded(ActiveDefinitions[id])))
+        { reason = "DLC cars are excluded from Car Collection Journal completion. Garage additions remain available; nothing was changed."; return false; }
+        var staged = ProfileContainer.Parse(container!.Serialize()); ProfileGameData.Copy(container, staged);
         if (!TryState(staged, out var state, out reason)) return false;
         if (!WristbandProgressionTestState.TryReadCurrentBand(staged, out byte oldBand))
         { reason = "The current wristband statistic is not safely recognized."; return false; }
@@ -135,6 +148,12 @@ public static partial class CollectionJournalState
         }
         var completedIds = state.Entries.Where(e => e.Supported && Completed(state.Payload, e)).Select(e => e.Definition.Id).ToHashSet();
         if (!ExplorationProgressState.TrySync(staged, selected, completedIds, out var world, out reason)) return false;
+        // Selecting any Promo row also repairs older completed Promo rows that
+        // predate native photo synchronization. It does not create image files.
+        var promoChallenges = selected.Any(id => entries[id].Definition.Category == PromoPhotoProgressState.CategoryId)
+            ? state.Entries.Where(e => e.Supported && e.Definition.Category == PromoPhotoProgressState.CategoryId && Completed(state.Payload, e)).Select(e => e.Definition)
+            : Enumerable.Empty<CollectionJournalCatalog.Challenge>();
+        if (!PromoPhotoProgressState.TrySync(staged, promoChallenges, out var promo, out reason)) return false;
         foreach (var edit in world.Attributes)
         {
             var old = ExplorationProgressState.Field(container.SaveState!, edit.Key, "DiscountBoardSaveState", edit.Id, edit.Type);
@@ -162,10 +181,11 @@ public static partial class CollectionJournalState
         if (explicitCount == 0)
         {
             var raceEdits = new List<(BinaryCareer.Record, byte[])>();
-            if (racesUpdated > 0 || stuntKeys.Length > 0 || jobLevel > 0 || world.Changed)
+            if (racesUpdated > 0 || stuntKeys.Length > 0 || jobLevel > 0 || world.Changed || promo.Changed)
             {
                 byte[] testBytes = staged.Serialize();
                 if (!ProfileContainer.Parse(testBytes).Serialize().AsSpan().SequenceEqual(testBytes)) return false;
+                if (!staged.Database.AsSpan().SequenceEqual(promo.Database ?? container.Database) || staged.Career!.Xuid != container.Career!.Xuid) return false;
                 foreach (var next in staged.Career!.Records)
                 {
                     var current = container.Career!.Records.Single(r => r.Name == next.Name);
@@ -175,8 +195,8 @@ public static partial class CollectionJournalState
                 }
             }
             plan = new(raceEdits, stuntAttributes, new(0, 0, oldTotals![FestivalKey], oldTotals[FestivalKey], oldTotals[DiscoveryKey], oldTotals[DiscoveryKey], oldBand, oldBand,
-                racesUpdated > 0 || stuntKeys.Length > 0 || jobLevel > 0 || world.Changed, racesUpdated, stuntKeys.Length, jobLevel,
-                world.Boards, world.Mascots, world.Landmarks, world.Regions, world.Stories), propertyEdits, staged);
+                racesUpdated > 0 || stuntKeys.Length > 0 || jobLevel > 0 || world.Changed || promo.Changed, racesUpdated, stuntKeys.Length, jobLevel,
+                world.Boards, world.Mascots, world.Landmarks, world.Regions, world.Stories, promo.Cars.Length), propertyEdits, staged, promo.Database);
             return true;
         }
         // Definition-backed category-count objectives form the journal's bonus
@@ -188,7 +208,7 @@ public static partial class CollectionJournalState
         {
             added = false;
             var counts = state.Entries.Where(e => Completed(state.Payload, e)).GroupBy(e => e.Definition.Category).ToDictionary(g => g.Key, g => (uint)g.Count());
-            var deltas = Categories.Keys.ToDictionary(id => id, id => counts.GetValueOrDefault(id) - baselineCounts.GetValueOrDefault(id));
+            var deltas = ActiveCategories.Keys.ToDictionary(id => id, id => counts.GetValueOrDefault(id) - baselineCounts.GetValueOrDefault(id));
             uint totalDelta = checked((uint)deltas.Values.Sum(v => (long)v));
             foreach (var entry in state.Entries.Where(e => e.Supported && Automatic(e.Definition) && !Completed(state.Payload, e)))
             {
@@ -226,7 +246,7 @@ public static partial class CollectionJournalState
             // older challenge revisions. Never reset their historical points to
             // today's catalog. Add ONLY verified new completion rewards instead.
             var baselinePoints = Points(originalState!); int festivalDelta = 0, discoveryDelta = 0;
-            foreach (var category in Categories.Values)
+            foreach (var category in ActiveCategories.Values)
             {
                 int delta = points.GetValueOrDefault(category.Id) - baselinePoints.GetValueOrDefault(category.Id);
                 if (delta == 0) continue;
@@ -242,7 +262,7 @@ public static partial class CollectionJournalState
         }
         else
         {
-            foreach (var category in Categories.Values) newTotals[CategoryKey(category)] = points.GetValueOrDefault(category.Id);
+            foreach (var category in ActiveCategories.Values) newTotals[CategoryKey(category)] = points.GetValueOrDefault(category.Id);
             newTotals[FestivalKey] = Festival(points); newTotals[DiscoveryKey] = Discovery(points);
         }
         foreach (var total in newTotals)
@@ -277,10 +297,10 @@ public static partial class CollectionJournalState
                 string value = staged.SaveState!.GetAttribute(next, "value")!;
                 if (container.SaveState!.GetAttribute(old, "value") != value) attributeEdits.Add(new(old, value));
             }
-        if (!staged.Sections[3].Payload.AsSpan().SequenceEqual(container.Sections[3].Payload) || staged.Career.Xuid != container.Career!.Xuid) return false;
+        if (!staged.Database.AsSpan().SequenceEqual(promo.Database ?? container.Database) || staged.Career.Xuid != container.Career!.Xuid) return false;
         plan = new(recordEdits, attributeEdits, new(explicitCount, automaticCount, oldTotals[FestivalKey], newTotals[FestivalKey],
             oldTotals[DiscoveryKey], newTotals[DiscoveryKey], oldBand, bandChange.SelectedBand, true, racesUpdated, stuntKeys.Length, jobLevel,
-            world.Boards, world.Mascots, world.Landmarks, world.Regions, world.Stories), propertyEdits, staged);
+            world.Boards, world.Mascots, world.Landmarks, world.Regions, world.Stories, promo.Cars.Length), propertyEdits, staged, promo.Database);
         reason = "";
         return true;
     }
@@ -303,6 +323,7 @@ public static partial class CollectionJournalState
 
     static bool TryState(ProfileContainer? container, out State? state, out string reason)
     {
+        using var catalogScope = ProfileGameData.Use(container);
         state = null; reason = "Journal record or save-state map is unavailable; showing the reference list read-only.";
         if (container?.Career is not { } career || container.SaveState is not { } bx) return false;
         var records = career.Records.Where(r => r.Name == RecordName).ToArray(); var placeholder = Map(bx, RecordName);
@@ -314,57 +335,86 @@ public static partial class CollectionJournalState
         reason = $"Journal format {U32(b, 0)}/{U32(b, 4)} is not supported (expected 2/1).";
         if (U32(b, 0) != 2 || U32(b, 4) != 1) return false;
         uint count = U32(b, 8);
-        reason = $"Save declares {count:n0} Journal entries; this catalog supports up to {Definitions.Count:n0}.";
-        if (count > Definitions.Count) return false;
+        reason = $"Save declares {count:n0} Journal entries; the record is too large.";
+        if (count > 100_000 || count > (b.Length - 12) / 61) return false;
         var seen = new HashSet<ulong>(); var entries = new List<Entry>(); int at = 12;
         for (int i = 0; i < count; i++)
         {
             reason = $"Journal entry {i + 1} has an unsupported or truncated layout.";
             if (at > b.Length - 32) return false;
             ulong id = U64(b, at);
-            if (!Definitions.TryGetValue(id, out var definition) || !seen.Add(id) || U64(b, at + 8) != id ||
-                U64(b, at + 16) != definition.LinkedId || U32(b, at + 28) != definition.Objectives.Length) return false;
-            uint savedVersion = U32(b, at + 24); bool supported = savedVersion == definition.Version;
-            reason = $"Challenge {id:X16} ({definition.Name}) has an unsupported objective layout.";
+            if (id == 0 || !seen.Add(id) || U64(b, at + 8) != id) return false;
+            ActiveDefinitions.TryGetValue(id, out var definition);
+            ulong linked = U64(b, at + 16); uint savedVersion = U32(b, at + 24), objectiveCount = U32(b, at + 28);
+            if (objectiveCount is < 1 or > 4096) return false;
+            bool supported = definition != null && linked == definition.LinkedId && savedVersion == definition.Version
+                && objectiveCount == definition.Objectives.Length && SupportsDefinition(definition);
+            reason = $"Challenge {id:X16} has an unsupported objective layout.";
             at += 32; var objectives = new List<Objective>();
-            foreach (var objective in definition.Objectives)
+            var actualDefinitions = new List<CollectionJournalCatalog.Objective>(); var objectiveIds = new HashSet<ulong>();
+            for (int j = 0; j < objectiveCount; j++)
             {
-                if (at > b.Length - 11 || U64(b, at) != objective.Id || b[at + 8] > 1) return false;
+                if (at > b.Length - 11 || b[at + 8] > 1) return false;
+                ulong objectiveId = U64(b, at); if (objectiveId == 0 || !objectiveIds.Add(objectiveId)) return false;
                 byte tag = b[at + 9]; int size = tag switch { 1 or 2 or 3 => 4, 13 => 1, _ => -1 };
-                if (size < 0 || at > b.Length - 10 - size || (tag == 13 && b[at + 10] > 1) ||
-                    (objective.Kind is "CarCollectionObjective" or "TakePhotoObjective") != (tag == 13)) return false;
-                objectives.Add(new(objective.Id, at + 8, at + 10, tag)); at += 10 + size;
+                if (size < 0 || at > b.Length - 10 - size || (tag == 13 && b[at + 10] > 1)) return false;
+                var expected = definition?.Objectives.ElementAtOrDefault(j);
+                supported &= expected != null && objectiveId == expected.Id
+                    && (expected.Kind is "CarCollectionObjective" or "TakePhotoObjective") == (tag == 13);
+                actualDefinitions.Add(new(objectiveId, 0, "Unknown", Array.Empty<ulong>(), false, Array.Empty<string>()));
+                objectives.Add(new(objectiveId, at + 8, at + 10, tag)); at += 10 + size;
             }
             if (at > b.Length - 29 || b[at] != 1 || U64(b, at + 9) > 1_000_000) return false;
             ulong active = U64(b, at + 1);
             if (active != 0 && !objectives.Any(o => o.Id == active)) return false;
+            definition ??= new(id, linked, savedVersion, 0, $"Unmapped challenge {id:X16}",
+                "No matching installed-game definition. Saved progress is preserved read-only.", "", 0, actualDefinitions.ToArray());
             entries.Add(new(definition, objectives.ToArray(), at, supported, savedVersion)); at += 29;
         }
         // Carry opaque trailing thumbnail/reward metadata unchanged, but bound
         // it and require an existing thumbnail-map count. Never invent missing metadata.
         reason = "Journal trailing metadata is not recognized; saved progress is read-only.";
         if (at > b.Length - 4 || b.Length - at > 2_000_000 || U32(b, at) > 100_000) return false;
-        state = new(records[0], b, entries.ToArray(), b[at..], count != Definitions.Count || entries.Any(e => !e.Supported)); reason = ""; return true;
+        state = new(records[0], b, entries.ToArray(), b[at..], !seen.SetEquals(ActiveDefinitions.Keys) || entries.Any(e => !e.Supported)); reason = ""; return true;
+    }
+
+    // Existing native sync maps are valid only for the definition they were
+    // verified against. New boolean and category-dependency objectives use the
+    // known serializer; new race/PB/world mechanics remain visible read-only.
+    static bool SupportsDefinition(CollectionJournalCatalog.Challenge c)
+    {
+        if (c.Category == PromoPhotoProgressState.CategoryId && c.PromoCarOrdinal <= 0) return false;
+        if (c.Category == GarageCollectionJournalState.CategoryId && c.Objectives.Any(o => o.Kind == "CarCollectionObjective") && c.CollectionCarOrdinal <= 0) return false;
+        if (ProfileGameData.Current?.Journal == null) return true;
+        if (!Definitions.TryGetValue(c.Id, out var known))
+            return c.Objectives.All(o => o.Kind is "CarCollectionObjective" or "TakePhotoObjective")
+                || Automatic(c) && c.Objectives.All(o => o.Dependencies.All(ActiveCategories.ContainsKey));
+        return c.LinkedId == known.LinkedId && c.Version == known.Version && c.Category == known.Category
+            && c.Points == known.Points && c.PromoCarOrdinal == known.PromoCarOrdinal && c.CollectionCarOrdinal == known.CollectionCarOrdinal && c.Objectives.Length == known.Objectives.Length
+            && c.Objectives.Zip(known.Objectives).All(p => p.First.Id == p.Second.Id && p.First.Kind == p.Second.Kind
+                && p.First.Target == p.Second.Target && p.First.GlobalDependency == p.Second.GlobalDependency
+                && p.First.Dependencies.SequenceEqual(p.Second.Dependencies) && p.First.Stats.SequenceEqual(p.Second.Stats));
     }
 
     static bool Completed(byte[] b, Entry entry) => U64(b, entry.TailOffset + 9) > 0;
     static bool Automatic(CollectionJournalCatalog.Challenge c) => c.Objectives.All(o => o.Dependencies.Length > 0 || o.GlobalDependency);
     static Dictionary<ulong, int> Points(State state) => state.Entries.Where(e => Completed(state.Payload, e)).GroupBy(e => e.Definition.Category)
         .ToDictionary(g => g.Key, g => g.Sum(e => e.Definition.Points));
-    static int Festival(Dictionary<ulong, int> points) => Categories.Values.Where(c => c.Festival).Sum(c => points.GetValueOrDefault(c.Id));
-    static int Discovery(Dictionary<ulong, int> points) => Categories.Values.Where(c => !c.Festival).Sum(c => points.GetValueOrDefault(c.Id));
+    static int Festival(Dictionary<ulong, int> points) => ActiveCategories.Values.Where(c => c.Festival).Sum(c => points.GetValueOrDefault(c.Id));
+    static int Discovery(Dictionary<ulong, int> points) => ActiveCategories.Values.Where(c => !c.Festival).Sum(c => points.GetValueOrDefault(c.Id));
     static string FriendlyCategory(CollectionJournalCatalog.Category c) => c.Name.StartsWith("CollectionCampaignCategory.", StringComparison.Ordinal) ? "Drift Attack" : c.Name;
     const string FestivalKey = "CurrencyBucket_FestivalCollectionCampaignProgress_cc_festival";
     const string DiscoveryKey = "CurrencyBucket_DiscoveryCollectionCampaignProgress_cc_discovery";
     static string CategoryKey(CollectionJournalCatalog.Category c) => "CurrencyBucket_CollectionCategoryProgress_" + c.Bucket;
     static bool TryTotals(ProfileContainer container, out Dictionary<string, int>? totals, out string reason)
-        => TryCategoryTotals(container, Categories.Values, out totals, out reason);
+        => TryCategoryTotals(container, ActiveCategories.Values, out totals, out reason);
     static bool TryStateTotals(ProfileContainer container, State state, out Dictionary<string, int>? totals, out string reason)
         => state.PartialCatalog
-            ? TryCategoryTotals(container, Categories.Values.Where(c => state.Entries.Any(e => e.Definition.Category == c.Id)), out totals, out reason)
+            ? TryCategoryTotals(container, ActiveCategories.Values.Where(c => state.Entries.Any(e => e.Definition.Category == c.Id)), out totals, out reason)
             : TryTotals(container, out totals, out reason);
     static bool TryCategoryTotals(ProfileContainer container, IEnumerable<CollectionJournalCatalog.Category> categories, out Dictionary<string, int>? totals, out string reason)
     {
+        using var catalogScope = ProfileGameData.Use(container);
         totals = null; reason = "Journal category/campaign currencies are not safely recognized.";
         if (container.SaveState is not { } bx) return false;
         var result = new Dictionary<string, int>();

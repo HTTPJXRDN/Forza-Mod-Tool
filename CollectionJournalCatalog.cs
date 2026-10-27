@@ -12,7 +12,11 @@ namespace FH6LocalCryptoTool;
 internal static class CollectionJournalCatalog
 {
     internal sealed record Objective(ulong Id, uint Target, string Kind, ulong[] Dependencies, bool GlobalDependency, string[] Stats);
-    internal sealed record Challenge(ulong Id, ulong LinkedId, uint Version, ulong Category, string Name, string Description, string Subtitle, int Points, Objective[] Objectives);
+    internal sealed record Challenge(ulong Id, ulong LinkedId, uint Version, ulong Category, string Name, string Description, string Subtitle, int Points, Objective[] Objectives)
+    {
+        internal int PromoCarOrdinal { get; init; }
+        internal int CollectionCarOrdinal { get; init; }
+    }
     internal sealed record Category(ulong Id, string Guid, string Name, string Bucket, bool Festival, int Count, int Maximum);
     internal sealed record Catalog(Category[] Categories, Challenge[] Challenges);
     internal static Catalog Data { get; } = Read();
@@ -26,7 +30,7 @@ internal static class CollectionJournalCatalog
             catalog.Categories.Select(c => c.Id).Distinct().Count() != 38 ||
             catalog.Challenges.Select(c => c.Id).Distinct().Count() != 2855)
             throw new InvalidDataException("Journal catalog coverage changed.");
-        return catalog;
+        return catalog with { Challenges = catalog.Challenges.Select(PromoPhotoProgressState.Reference).Select(GarageCollectionJournalState.Reference).Select(GarageCollectionJournalState.FriendlyLabels).ToArray() };
     }
 
     const string Encoded = """

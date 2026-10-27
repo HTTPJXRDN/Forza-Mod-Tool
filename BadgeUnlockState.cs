@@ -8,6 +8,7 @@ public static class BadgeUnlockState
 {
     const string RecordName = "BadgeChallengeSaveState";
     static readonly Dictionary<ulong, BadgeCatalog.Badge> Definitions = BadgeCatalog.Items.ToDictionary(b => b.SaveId);
+    static Dictionary<ulong, BadgeCatalog.Badge> ActiveDefinitions => ProfileGameData.Current?.BadgeDefinitions ?? Definitions;
     public sealed record Row(uint Id, string Name, string Description, string Category, bool Unlocked, bool Supported,
         DateTimeOffset? EarnedUtc = null);
     public sealed record EarnedDate(uint Id, string Name, DateTimeOffset Utc, bool Playlist);
@@ -15,6 +16,7 @@ public static class BadgeUnlockState
 
     public static bool TryRead(ProfileContainer? container, out Row[] rows)
     {
+        using var catalogScope = ProfileGameData.Use(container);
         rows = Array.Empty<Row>();
         if (!TryRecord(container, out var record) || !TryParse(record!.Payload, out var entries)) return false;
         rows = entries!.Select(e => new Row(e.Definition.Id, e.Definition.Name, e.Definition.Description,
@@ -30,6 +32,7 @@ public static class BadgeUnlockState
     public static bool TryPlanUnlockDates(ProfileContainer? container, IEnumerable<ulong>? selectedIds,
         DateTimeOffset? earnedUtc, out EarnedDate[] dates, out string error)
     {
+        using var catalogScope = ProfileGameData.Use(container);
         dates = Array.Empty<EarnedDate>();
         if (!TryTargets(container, selectedIds, out var record, out var targets, out error)) return false;
         var planned = new List<EarnedDate>(); var now = DateTimeOffset.UtcNow;
@@ -45,6 +48,7 @@ public static class BadgeUnlockState
     public static bool TryUnlockSelected(ProfileContainer? container, IEnumerable<ulong>? selectedIds,
         DateTimeOffset? earnedUtc, out int added, out string error)
     {
+        using var catalogScope = ProfileGameData.Use(container);
         added = 0;
         // Materialize caller input once, so validation and application use exactly the same selection.
         var selected = selectedIds?.ToArray();
@@ -76,6 +80,7 @@ public static class BadgeUnlockState
     public static bool TrySetEarnedDate(ProfileContainer? container, IEnumerable<ulong>? selectedIds,
         DateTimeOffset earnedUtc, out int changed, out string error)
     {
+        using var catalogScope = ProfileGameData.Use(container);
         changed = 0;
         if (!TryTargets(container, selectedIds, out var record, out var targets, out error)) return false;
         var now = DateTimeOffset.UtcNow;
@@ -99,9 +104,10 @@ public static class BadgeUnlockState
     static bool TryTargets(ProfileContainer? container, IEnumerable<ulong>? selectedIds,
         out BinaryCareer.Record? record, out Entry[]? targets, out string error)
     {
+        using var catalogScope = ProfileGameData.Use(container);
         record = null; targets = null; error = "The badge layout or selection is not safely supported. Nothing was changed.";
         var selected = selectedIds?.ToHashSet();
-        if (selected is null || selected.Count == 0 || selected.Any(id => !BadgeCatalog.Items.Any(b => b.Id == id))) return false;
+        if (selected is null || selected.Count == 0 || selected.Any(id => !ActiveDefinitions.Values.Any(b => b.Id == id))) return false;
         if (!TryRecord(container, out record) || !TryParse(record!.Payload, out var entries)) return false;
         targets = entries!.Where(e => selected.Contains(e.Definition.Id)).ToArray();
         if (targets.Length != selected.Count)
@@ -118,6 +124,7 @@ public static class BadgeUnlockState
 
     static bool TryRecord(ProfileContainer? container, out BinaryCareer.Record? record)
     {
+        using var catalogScope = ProfileGameData.Use(container);
         record = null;
         if (container?.Career is not { } career || container.SaveState is not { } bx) return false;
         var records = career.Records.Where(r => r.Name == RecordName).ToArray();
@@ -138,23 +145,30 @@ public static class BadgeUnlockState
         // Validate every stored identity/objective, and never synthesize missing badges.
         if (bytes.Length < 16 || U32(bytes, 4) != 1) return false;
         uint count = U32(bytes, 8);
-        if (count == 0 || count > Definitions.Count) return false;
+        if (count == 0 || count > 10000 || count > (bytes.Length - 12) / 61) return false;
         var parsed = new List<Entry>(); var seen = new HashSet<ulong>(); int at = 12;
         for (int index = 0; index < count; index++)
         {
             if (at > bytes.Length - 32) return false;
             ulong id = U64(bytes, at);
-            if (!Definitions.TryGetValue(id, out var def) || !seen.Add(id) || U64(bytes, at + 8) != id || U64(bytes, at + 16) != def.LinkedId || U32(bytes, at + 28) != def.Objectives.Length) return false;
-            bool supported = U32(bytes, at + 24) == def.Version;
+            if (id == 0 || !seen.Add(id) || U64(bytes, at + 8) != id) return false;
+            ActiveDefinitions.TryGetValue(id, out var def);
+            uint objectiveCount = U32(bytes, at + 28), version = U32(bytes, at + 24); ulong linked = U64(bytes, at + 16);
+            if (objectiveCount is < 1 or > 4096) return false;
+            bool supported = def != null && linked == def.LinkedId && version == def.Version && objectiveCount == def.Objectives.Length;
             at += 32; var offsets = new List<int>();
-            foreach (var objective in def.Objectives)
+            var actualObjectives = new List<BadgeCatalog.Objective>(); var objectiveIds = new HashSet<ulong>();
+            for (int j = 0; j < objectiveCount; j++)
             {
-                if (at > bytes.Length - 14 || U64(bytes, at) != objective.Id || bytes[at + 8] > 1 || bytes[at + 9] is not (1 or 2 or 3)) return false;
-                offsets.Add(at); at += 14;
+                if (at > bytes.Length - 14 || bytes[at + 8] > 1 || bytes[at + 9] is not (1 or 2 or 3)) return false;
+                ulong objectiveId = U64(bytes, at); if (objectiveId == 0 || !objectiveIds.Add(objectiveId)) return false;
+                supported &= def?.Objectives.ElementAtOrDefault(j)?.Id == objectiveId;
+                actualObjectives.Add(new(objectiveId, 0, false)); offsets.Add(at); at += 14;
             }
             if (at > bytes.Length - 29 || bytes[at] != 1 || U64(bytes, at + 9) > 1) return false;
             ulong active = U64(bytes, at + 1);
-            if (active != 0 && !def.Objectives.Any(o => o.Id == active)) return false;
+            if (active != 0 && !objectiveIds.Contains(active)) return false;
+            def ??= new(0, id, linked, version, $"Unmapped badge {id:X16}", "Missing installed-game definition; saved progress is preserved.", "Unmapped", actualObjectives.ToArray());
             parsed.Add(new(def, offsets.ToArray(), at, supported)); at += 29;
         }
         // Observed trailing metadata is a counted u32 list, empty in some saves.

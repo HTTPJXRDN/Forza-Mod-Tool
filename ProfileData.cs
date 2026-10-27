@@ -91,6 +91,8 @@ public static class ProfileData
 
     private static byte[] DecryptSwapInput(byte[] encrypted, string label)
     {
+        if (Fh5ProfileCrypto.HasHeaderAuthentication(encrypted.Length, encrypted))
+            throw new InvalidDataException($"{label} is an FH5 save. Save Swap currently supports FH6 only. No swapped save was written.");
         var key = Fh6Keys.Get("ProfileData");
         if (!ForzaZip.ValidateContainer(encrypted, key.DataKey, key.MacKey, out _))
             throw new InvalidDataException($"{label} is not an authenticated encrypted FH6 C_ProfileData save. No swapped save was written.");

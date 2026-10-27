@@ -29,7 +29,7 @@ internal static class GameDbDelta
         if (!File.Exists(path)) throw new FileNotFoundException("A merge input or clean baseline is missing.", path);
         Exec(db, $"ATTACH DATABASE '{Path.GetFullPath(path).Replace("'", "''")}' AS {alias}");
     }
-    internal static List<DeltaTable> Inspect(SqliteConnection db, List<string> warnings)
+    internal static List<DeltaTable> Inspect(SqliteConnection db, List<string> warnings, List<string>? notes = null)
     {
         var result = new List<DeltaTable>();
         var oldTables = Tables(db, "old"); var donorTables = Tables(db, "ov"); var newTables = Tables(db, "main");
@@ -45,8 +45,6 @@ internal static class GameDbDelta
             if ((!addedTable && !Compatible(old, donor)) ||
                 (newTables.Contains(table, StringComparer.OrdinalIgnoreCase) && !Compatible(updated, donor)))
             { warnings.Add($"{table}: column sets or primary keys differ; review schema changes before merging."); continue; }
-            if (!addedTable && !newTables.Contains(table, StringComparer.OrdinalIgnoreCase))
-            { warnings.Add($"{table}: removed by the update; refusing to recreate an old game table automatically."); continue; }
             int added, changed = 0, deleted = 0;
             if (addedTable) added = Count(db, $"SELECT COUNT(*) FROM ov.{Q(table)}");
             else if (donor.Keys.Length > 0)
@@ -63,6 +61,21 @@ internal static class GameDbDelta
                 added = rows.Sum(r => Math.Max(0, r.Difference));
                 deleted = rows.Sum(r => Math.Max(0, -r.Difference));
             }
+            if (!addedTable && !newTables.Contains(table, StringComparer.OrdinalIgnoreCase))
+            {
+                // An update may deliberately remove an old official table. If
+                // the user left it alone, there is no mod delta to carry over:
+                // preserve the new schema rather than blocking unrelated cars
+                // and engines or silently resurrecting the obsolete table.
+                bool sameDefinition = SameDefinitions(db, table);
+                if (added + changed + deleted == 0 && sameDefinition)
+                    notes?.Add($"{table}: absent from the clean updated DB and unchanged versus the baseline; left out of the merged result.");
+                else
+                    warnings.Add($"{table}: absent from the updated DB but has {added:n0} additions, {changed:n0} edited rows, {deleted:n0} deletions" +
+                        (sameDefinition ? "" : " or changed table/index/trigger definitions") +
+                        "; cannot carry these edits over without recreating a removed game table. Review this table before merging.");
+                continue;
+            }
             result.Add(new(table, donor.Columns, donor.Keys, addedTable, added, changed, deleted));
         }
         return result;
@@ -70,6 +83,20 @@ internal static class GameDbDelta
     private static bool Compatible((string[] Columns, string[] Keys) a, (string[] Columns, string[] Keys) b) =>
         a.Columns.ToHashSet(StringComparer.OrdinalIgnoreCase).SetEquals(b.Columns) &&
         a.Keys.SequenceEqual(b.Keys, StringComparer.OrdinalIgnoreCase);
+    private static bool SameDefinitions(SqliteConnection db, string table)
+    {
+        List<string> Definitions(string schema)
+        {
+            using var cmd = db.CreateCommand();
+            cmd.CommandText = $"SELECT type,name,sql FROM {schema}.sqlite_master WHERE tbl_name=$table AND type IN ('table','index','trigger') ORDER BY type,name";
+            cmd.Parameters.AddWithValue("$table", table);
+            using var reader = cmd.ExecuteReader(); var definitions = new List<string>();
+            while (reader.Read()) definitions.Add(JsonSerializer.Serialize(new[]
+                { reader.GetString(0), reader.GetString(1), reader.IsDBNull(2) ? null : reader.GetString(2) }));
+            return definitions;
+        }
+        return Definitions("old").SequenceEqual(Definitions("ov"), StringComparer.Ordinal);
+    }
     private static string Match(IEnumerable<string> keys, string a, string b) =>
         string.Join(" AND ", keys.Select(k => $"{a}.{Q(k)} IS {b}.{Q(k)}"));
     private static string Different(IEnumerable<string> cols, string a, string b) =>

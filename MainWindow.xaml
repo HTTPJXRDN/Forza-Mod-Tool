@@ -6,6 +6,7 @@
         xmlns:anim="clr-namespace:FH6AnimationSwap"
         xmlns:browser="clr-namespace:FH6LocalCryptoTool.DbBrowser"
         xmlns:garage="clr-namespace:FH6LocalCryptoTool.GarageViewer"
+        xmlns:help="clr-namespace:FH6LocalCryptoTool.Help"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="Forza Mod Tool" Height="840" Width="1080"
         MinHeight="520" MinWidth="560"
@@ -381,6 +382,39 @@
             </Setter>
         </Style>
 
+        <Style x:Key="SupportIconButton" TargetType="Button">
+            <Setter Property="Foreground" Value="{StaticResource Pink}"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Width" Value="32"/>
+            <Setter Property="Height" Value="30"/>
+            <Setter Property="Padding" Value="5"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="SupportBorder" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1"
+                                CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Foreground" Value="#FFFF4A84"/>
+                                <Setter Property="Background" Value="#20E8175D"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter Property="BorderBrush" Value="{StaticResource Pink}"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Background" Value="#38E8175D"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- ===== Pink CheckBox ===== -->
         <Style TargetType="CheckBox">
             <Setter Property="Foreground" Value="{StaticResource Dim}"/>
@@ -450,7 +484,56 @@
         </Border>
         <Border Grid.Row="1" Height="2" Background="{StaticResource PinkAccentLine}"/>
 
-    <TabControl Grid.Row="2" Background="{StaticResource AppGrad}" BorderThickness="0">
+    <TabControl x:Name="MainTabs" Grid.Row="2" Background="{StaticResource AppGrad}" BorderThickness="0">
+      <TabControl.Template>
+        <ControlTemplate TargetType="TabControl">
+          <Grid KeyboardNavigation.TabNavigation="Local">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <Grid Grid.Row="0">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+              </Grid.ColumnDefinitions>
+              <TabPanel Grid.Column="0" IsItemsHost="True" KeyboardNavigation.TabIndex="1"/>
+              <!-- Reserve header space so neither the version nor support icon covers tabs. -->
+              <StackPanel x:Name="VersionSupportHeader" Grid.Column="1" Orientation="Horizontal"
+                          VerticalAlignment="Top" Height="32" Margin="8,0,9,0">
+                <TextBlock x:Name="VersionLabel" Text="V1.3.0" VerticalAlignment="Center"
+                           Foreground="{StaticResource Faint}" FontSize="10.5" FontWeight="SemiBold"
+                           Margin="0,0,5,0" IsHitTestVisible="False"/>
+                <Button x:Name="SupportButton" Style="{StaticResource SupportIconButton}"
+                        ToolTip="Buy me an ENERGY DRINK" ToolTipService.InitialShowDelay="250"
+                        ToolTipService.ShowDuration="8000" AutomationProperties.Name="Buy me an energy drink"
+                        Click="SupportButton_Click">
+                  <Viewbox Width="18" Height="18" IsHitTestVisible="False">
+                    <Canvas Width="24" Height="24">
+                      <Path Data="M4,8 H17 V14 C17,18 14,19 10.5,19 C7,19 4,18 4,14 Z M17,9 H19 C23,9 23,15 19,15 H17 M3,22 H20 M8,2 C6,4 10,4 8,6 M13,2 C11,4 15,4 13,6"
+                            Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                            StrokeThickness="1.7" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
+                    </Canvas>
+                  </Viewbox>
+                </Button>
+                <Button x:Name="DiscordButton" Style="{StaticResource SupportIconButton}"
+                        ToolTip="Join the Forza Mods Discord" ToolTipService.InitialShowDelay="250"
+                        ToolTipService.ShowDuration="8000" AutomationProperties.Name="Join the Forza Mods Discord"
+                        Click="DiscordButton_Click">
+                  <Viewbox Width="18" Height="18" IsHitTestVisible="False">
+                    <Canvas Width="24" Height="24">
+                      <Path Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                            Data="F0 M19.3,5.4 C17.9,4.7 16.7,4.4 15.5,4.2 L15,5.1 C13,4.8 11,4.8 9,5.1 L8.5,4.2 C7.3,4.4 6.1,4.7 4.7,5.4 C2.4,8.8 1.7,12.1 2.1,15.5 C3.6,16.6 5.1,17.4 6.8,17.9 L7.7,16.4 L6.3,15.7 C9.9,17.4 14.1,17.4 17.7,15.7 L16.3,16.4 L17.2,17.9 C18.9,17.4 20.4,16.6 21.9,15.5 C22.3,12.1 21.6,8.8 19.3,5.4 Z M8.5,10.2 C7.5,10.2 6.9,11 6.9,12 C6.9,13 7.5,13.8 8.5,13.8 C9.5,13.8 10.1,13 10.1,12 C10.1,11 9.5,10.2 8.5,10.2 Z M15.5,10.2 C14.5,10.2 13.9,11 13.9,12 C13.9,13 14.5,13.8 15.5,13.8 C16.5,13.8 17.1,13 17.1,12 C17.1,11 16.5,10.2 15.5,10.2 Z"/>
+                    </Canvas>
+                  </Viewbox>
+                </Button>
+              </StackPanel>
+            </Grid>
+            <ContentPresenter x:Name="PART_SelectedContentHost" Grid.Row="1" ContentSource="SelectedContent"
+                              Margin="{TemplateBinding Padding}" SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
+          </Grid>
+        </ControlTemplate>
+      </TabControl.Template>
       <TabItem Header="Crypto">
     <Grid x:Name="CryptoWorkspace" Margin="24,18,24,16">
         <Grid.RowDefinitions>
@@ -474,9 +557,12 @@
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <StackPanel Grid.Column="0" VerticalAlignment="Center">
+              <StackPanel Orientation="Horizontal">
                 <TextBlock FontSize="22" FontWeight="Bold">
                     <Run Text="Forza" Foreground="{StaticResource Pink}"/><Run Text=" Crypto"/>
                 </TextBlock>
+                <help:TabHelpButton Topic="Crypto"/>
+              </StackPanel>
                 <TextBlock Text="Drag a file onto the zone below."
                            Foreground="{StaticResource Dim}" FontSize="12" Margin="0,3,0,0"/>
             </StackPanel>
@@ -505,7 +591,7 @@
                     <Image Source="/Assets/Logo/dbtool_icon.png" Width="42" Height="42"
                            HorizontalAlignment="Center" Stretch="Uniform"
                            RenderOptions.BitmapScalingMode="HighQuality"/>
-                    <TextBlock x:Name="DropTitle" Text="Drop a FH6 or FM8 file here" FontSize="18" FontWeight="Bold"
+                    <TextBlock x:Name="DropTitle" Text="Drop a FH2, FH5, FH6 or FM8 GameDB here" FontSize="18" FontWeight="Bold"
                                HorizontalAlignment="Center" Margin="0,5,0,0"/>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,5,0,0">
                         <Ellipse Width="5" Height="5" Fill="{StaticResource Pink}" VerticalAlignment="Center" Margin="0,0,7,0"/>
@@ -522,7 +608,7 @@
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,2,0,0">
                         <Ellipse Width="5" Height="5" Fill="{StaticResource Pink}" VerticalAlignment="Center" Margin="0,0,7,0"/>
                         <TextBlock Foreground="{StaticResource Dim}" FontSize="12.5" VerticalAlignment="Center">
-                            <Run Text="asset" Foreground="{StaticResource Ink}"/><Run Text="  ↔  decrypt/re-encrypt ini, txt, JSON,"/>
+                            <Run Text="asset" Foreground="{StaticResource Ink}"/><Run Text="  ↔  FH5/FH6/FM8 ini, txt, JSON, XML"/>
                         </TextBlock>
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,2,0,0">
@@ -534,7 +620,7 @@
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,2,0,0">
                         <Ellipse Width="5" Height="5" Fill="{StaticResource Pink}" VerticalAlignment="Center" Margin="0,0,7,0"/>
                         <TextBlock Foreground="{StaticResource Dim}" FontSize="12.5" VerticalAlignment="Center">
-                            <Run Text="C_ProfileData" Foreground="{StaticResource Ink}"/><Run Text="  ↔  .sqlite — FH6 save database export / re-encrypt"/>
+                            <Run Text="Profile save" Foreground="{StaticResource Ink}"/><Run Text="  →  .decrypted — FH5 decrypt only / FH6 decrypt and re-encrypt"/>
                         </TextBlock>
                     </StackPanel>
                     <TextBlock x:Name="StagedText" Visibility="Collapsed" HorizontalAlignment="Center"
@@ -713,18 +799,21 @@
                   Background="{StaticResource CardHeadGrad}" Padding="20,11"
                   BorderBrush="{StaticResource PinkAccentLine}" BorderThickness="0,0,0,2">
             <StackPanel VerticalAlignment="Center">
+              <StackPanel Orientation="Horizontal">
               <TextBlock FontSize="22" FontWeight="Bold"><Run Text="Save" Foreground="{StaticResource Pink}"/><Run Text=" Swap"/></TextBlock>
+              <help:TabHelpButton Topic="SaveSwap"/>
+              </StackPanel>
               <TextBlock Margin="0,3,0,0" Foreground="{StaticResource Dim}" FontSize="12" TextWrapping="Wrap"
                          Text="Copies donor progress while retaining the target account identity and container framing — originals are never overwritten."/>
             </StackPanel>
           </Border>
-          <TextBlock Grid.Row="1" Text="DONOR SAVE (progress to copy)" Foreground="{StaticResource Pink}" FontWeight="Bold" Margin="0,0,0,7"/>
+          <TextBlock Grid.Row="1" Text="DONOR SAVE (downloaded save)" Foreground="{StaticResource Pink}" FontWeight="Bold" Margin="0,0,0,7"/>
           <Grid Grid.Row="2" Margin="0,0,0,20">
             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
             <TextBox x:Name="DonorSaveText" Grid.Column="0" Height="40" Style="{StaticResource Input}"/>
             <Button Grid.Column="1" Content="Browse…" Style="{StaticResource PinkButton}" Margin="10,0,0,0" Click="BrowseDonorSave_Click"/>
           </Grid>
-          <TextBlock Grid.Row="3" Text="TARGET SAVE (your account/container)" Foreground="{StaticResource Pink}" FontWeight="Bold" Margin="0,0,0,7"/>
+          <TextBlock Grid.Row="3" Text="TARGET SAVE (your save)" Foreground="{StaticResource Pink}" FontWeight="Bold" Margin="0,0,0,7"/>
           <Grid Grid.Row="4" Margin="0,0,0,20">
             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
             <TextBox x:Name="TargetSaveText" Grid.Column="0" Height="40" Style="{StaticResource Input}"/>
@@ -749,10 +838,6 @@
                 <browser:DbBrowserView/>
             </TabItem>
     </TabControl>
-        <TextBlock Grid.Row="2" Panel.ZIndex="20" Text="V1.2.6.3"
-                   HorizontalAlignment="Right" VerticalAlignment="Top"
-                   Margin="0,10,15,0" Foreground="{StaticResource Faint}"
-                   FontSize="10.5" FontWeight="SemiBold" IsHitTestVisible="False"/>
       </Grid>
     </Border>
 </Window>

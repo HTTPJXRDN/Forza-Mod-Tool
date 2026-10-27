@@ -7,8 +7,8 @@ namespace FH6LocalCryptoTool;
 
 internal static class CarRelatedDbScope
 {
-    // Rebuild-only ownership graph, matching the car exporter without changing
-    // its behavior. Missing optional tables still clear this car's old rows.
+    // Shared export/rebuild ownership mapping. Import/merge conflict policies
+    // are unchanged; unselected cars' complete dependency graphs protect rows.
     internal static Dictionary<string, string> ReadRowScopes(SqliteConnection db, string schema,
         long carId, bool otherCars = false)
         => ReadRowScopes(db, schema, new[] { carId }, otherCars);
@@ -62,7 +62,7 @@ internal static class CarRelatedDbScope
             string? scope = For(table, cols);
             if (scope is not null) result.Add(table, scope);
         }
-        return result;
+        return CarRelatedDbGraph.Expand(db, schema, result);
     }
 
     private static string? Scope(string table, List<string> columns, string comparison,

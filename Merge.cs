@@ -52,6 +52,7 @@ public static partial class Merge
                            IEnumerable<string>? keepBaseTables = null,
                            bool preserveKeylessNewRows = false)
     {
+        if (!overlay.EndsWith(".sql", StringComparison.OrdinalIgnoreCase)) GameDbIdentity.RequireSameGame(baseSqlite, overlay);
         File.Copy(baseSqlite, outSqlite, overwrite: true);
 
         var force = new HashSet<string>(forceOverlayTables ?? DefaultForceOverlayTables,

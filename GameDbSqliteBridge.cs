@@ -7,7 +7,7 @@ namespace FH6LocalCryptoTool;
 
 /// <summary>
 /// Converts an encrypted GameDB to a private temporary SQLite file for the
-/// existing editor/merge engine, and writes a new encrypted GameDB afterward.
+/// existing editor/merge engine. Legacy plain-SQLite SLTs retain their format.
 /// Callers own only their outputs; source .slt and .sqlite files are read-only.
 /// </summary>
 public static class GameDbSqliteBridge
@@ -62,12 +62,18 @@ public static class GameDbSqliteBridge
             byte[] encrypted = File.ReadAllBytes(inputPath);
             string hash = Convert.ToHexString(SHA256.HashData(encrypted));
             var format = GameDbContainerFormat.Detect(encrypted);
+            if (format == GameDbContainerFormat.Kind.Sqlite)
+            {
+                CheckSqlite(inputPath);
+                return new MaterializedDatabase(inputPath, inputPath, false, hash);
+            }
             if (format == GameDbContainerFormat.Kind.ForzaMotorsportTransformIt32 && !allowMotorsport)
                 throw new NotSupportedException("Use the Crypto tab to decrypt Motorsport .slt files, then open the SQLite separately. Motorsport editor/merge integration is not enabled.");
             byte[] sqlite = format switch
             {
                 GameDbContainerFormat.Kind.Fh6Aes36 =>
                     GameDb.Decrypt(encrypted, Fh6Keys.Get("GameDB").DataKey),
+                GameDbContainerFormat.Kind.Fh5TransformIt36 => Fh5GameDb.Decrypt(encrypted),
                 GameDbContainerFormat.Kind.ForzaMotorsportTransformIt32 =>
                     MotorsportGameDb.Decrypt(encrypted),
                 _ => throw new InvalidDataException(
@@ -102,7 +108,7 @@ public static class GameDbSqliteBridge
         templateSlt = Path.GetFullPath(templateSlt);
         outputSlt = Path.GetFullPath(outputSlt);
         if (!IsSlt(outputSlt))
-            throw new InvalidOperationException("Encrypted GameDB output must use the .slt extension.");
+            throw new InvalidOperationException("GameDB output must use the .slt extension.");
         if (string.Equals(outputSlt, templateSlt, StringComparison.OrdinalIgnoreCase) ||
             string.Equals(outputSlt, sqlitePath, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Choose a new output path; source files are never overwritten.");
@@ -113,25 +119,37 @@ public static class GameDbSqliteBridge
         byte[] sqlite = File.ReadAllBytes(sqlitePath);
         byte[] template = File.ReadAllBytes(templateSlt);
         var format = GameDbContainerFormat.Detect(template);
-        if (format != GameDbContainerFormat.Kind.Fh6Aes36 && format != GameDbContainerFormat.Kind.ForzaMotorsportTransformIt32)
+        if (format != GameDbContainerFormat.Kind.Sqlite && format != GameDbContainerFormat.Kind.Fh6Aes36 &&
+            format != GameDbContainerFormat.Kind.Fh5TransformIt36 && format != GameDbContainerFormat.Kind.ForzaMotorsportTransformIt32)
             throw new InvalidDataException("The selected .slt template is not a recognized encrypted GameDB.");
+        bool plain = format == GameDbContainerFormat.Kind.Sqlite;
+        bool fh5 = format == GameDbContainerFormat.Kind.Fh5TransformIt36;
         bool motorsport = format == GameDbContainerFormat.Kind.ForzaMotorsportTransformIt32;
         if (motorsport && !allowMotorsport)
             throw new NotSupportedException("Use the Crypto tab for Motorsport re-encryption. Motorsport editor/merge integration is not enabled.");
-        if (!motorsport && !GameDb.LooksLikeSqlite(GameDb.Decrypt(template, Fh6Keys.Get("GameDB").DataKey)))
-            throw new InvalidDataException("The selected .slt template is not a readable GameDB.");
-        byte[] encrypted = motorsport ? MotorsportGameDb.Encrypt(sqlite, template)
+        using (var original = Materialize(templateSlt, allowMotorsport))
+        {
+            original.VerifySourceUnchanged();
+            GameDbIdentity.RequireSameGame(sqlitePath, original.SqlitePath);
+            if (plain && GameDbIdentity.Detect(sqlitePath) is ForzaGame.Horizon5 or ForzaGame.Horizon6)
+                throw new InvalidDataException("FH5/FH6 SLT export requires the original encrypted SLT, not a plaintext SQLite template.");
+            ValidateTemplateVersion(sqlitePath, original.SqlitePath);
+        }
+        byte[] encrypted = plain ? sqlite : fh5 ? Fh5GameDb.Encrypt(sqlite, template) : motorsport ? MotorsportGameDb.Encrypt(sqlite, template)
             : GameDb.Encrypt(sqlite, template, Fh6Keys.Get("GameDB").DataKey);
-        byte[] roundTrip = motorsport ? MotorsportGameDb.Decrypt(encrypted)
+        byte[] roundTrip = plain ? encrypted : fh5 ? Fh5GameDb.Decrypt(encrypted) : motorsport ? MotorsportGameDb.Decrypt(encrypted)
             : GameDb.Decrypt(encrypted, Fh6Keys.Get("GameDB").DataKey);
         if (roundTrip.Length < sqlite.Length || !roundTrip.AsSpan(0, sqlite.Length).SequenceEqual(sqlite))
             throw new InvalidDataException("Encrypted output did not reproduce the edited SQLite database.");
 
+        using var labels = TrackSpacingLabelExport.Prepare(sqlitePath, outputSlt, templateSlt);
         string partial = outputSlt + "." + Guid.NewGuid().ToString("N") + ".partial";
         try
         {
             File.WriteAllBytes(partial, encrypted);
+            labels.Publish();
             File.Move(partial, outputSlt);
+            labels.Complete();
         }
         finally
         {
@@ -140,6 +158,20 @@ public static class GameDbSqliteBridge
     }
 
     public static GameDbContainerFormat.Kind DetectFormat(string path) => GameDbContainerFormat.Detect(path);
+
+    private static void ValidateTemplateVersion(string sqlitePath, string templateSqlite)
+    {
+        // Car-only donor exports may omit VersionInfo; full DBs must not be
+        // encrypted using a template from another build, even of the same game.
+        string? Stamp(string path)
+        {
+            try { return StockDatabaseCatalog.Version(path); }
+            catch (SqliteException) { return null; }
+        }
+        string? source = Stamp(sqlitePath), template = Stamp(templateSqlite);
+        if (source != null && template != null && source != template)
+            throw new InvalidDataException("The edited DB and SLT template have different database stamps. Choose the original SLT from the same game/build.");
+    }
 
     private static bool LooksLikeSqliteFile(string path)
     {

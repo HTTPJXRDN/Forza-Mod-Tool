@@ -119,6 +119,28 @@ public partial class MainWindow : Window
     private void CloseButton_Click(object sender, RoutedEventArgs e)
         => Close();
 
+    internal const string SupportPageUrl = "https://buymeacoffee.com/jxrdn";
+    internal const string DiscordInviteUrl = "https://discord.gg/forzamods";
+
+    private void SupportButton_Click(object sender, RoutedEventArgs e)
+        => OpenHeaderLink(SupportPageUrl, "Buy me an energy drink");
+
+    private void DiscordButton_Click(object sender, RoutedEventArgs e)
+        => OpenHeaderLink(DiscordInviteUrl, "Forza Mods Discord");
+
+    private void OpenHeaderLink(string url, string title)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        catch
+        {
+            MessageBox.Show(this, "Couldn't open your browser. You can visit:\n" + url,
+                title, MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+    }
+
     private void Window_StateChanged(object? sender, EventArgs e)
     {
         if (MaximizeButton is not null)
@@ -181,6 +203,16 @@ public partial class MainWindow : Window
             Status("Extract-only output, not a repack workspace.");
             return;
         }
+        if (Fh5ZipArchive.IsWorkspace(path))
+        {
+            _pendingInput = path;
+            _fh6KeyUsage = "General";
+            StagedText.Text = $"Staged: {Path.GetFileName(path)}   (FH5 / standard ZIP workspace → Re-encrypt / rebuild)";
+            StagedText.Visibility = Visibility.Visible;
+            Log("ZIP workspace staged. Edit its files, then Re-encrypt to rebuild; keep the metadata and original template.");
+            Status("ZIP workspace staged.");
+            return;
+        }
         if (Fh6ZipArchive.IsWorkspace(path))
         {
             _pendingInput = path;
@@ -209,11 +241,13 @@ public partial class MainWindow : Window
             return;
         }
         _pendingInput = path;
+        if (StageFh5ProfileInput(path)) return;
         if (StageProfileInput(path)) return;
         bool skeld = IsSkeld(path);
         bool skeldJson = IsSkeldJson(path);
         bool zip = string.Equals(Path.GetExtension(path), ".zip", StringComparison.OrdinalIgnoreCase) || MotorsportCmsArchive.HasZipSignature(path);
         bool sqlite = IsSqlite(path);
+        bool fh5Asset = !skeld && !skeldJson && !zip && !sqlite && IsFh5AssetContainer(path);
         bool plainText = !skeld && !skeldJson && !zip && !sqlite && IsTextIni(path);  // decrypted text asset → re-encrypt
         bool asset = !skeld && !skeldJson && !zip && !sqlite && !plainText && IsAssetContainer(path);
         // Asset/zip/plain-text use the General key; everything else (a gamedb .slt, a
@@ -229,15 +263,18 @@ public partial class MainWindow : Window
                     : skeldJson ? ".skeld.json → rebuild .skeld (no key)"
                     : zip ? ".zip → decrypt & extract"
                     : plainText ? "decrypted text → Re-encrypt"
-                    : sqlite ? ".sqlite → Re-encrypt"
+                    : sqlite ? $"{GameDbIdentity.DisplayName(TryDetectSqliteGame(path))} SQLite → Re-encrypt with matching template"
+                    : fh5Asset ? "FH5 General/File asset → Decrypt (authenticated)"
                     : asset ? "encrypted asset → Decrypt"
                     : dbFormat == GameDbContainerFormat.Kind.ForzaMotorsportTransformIt32
                         ? ".slt → Forza Motorsport TransformIT GameDB"
+                    : dbFormat == GameDbContainerFormat.Kind.Fh5TransformIt36
+                        ? ".slt → FH5 authenticated GameDB"
                     : ".slt → Decrypt";
         StagedText.Text = $"Staged: {Path.GetFileName(path)}   ({what})";
         StagedText.Visibility = Visibility.Visible;
         if (sqlite) Log("Decrypted DB staged. Re-encrypt it, or click Export Car Related DB to make a one-car merge donor.");
-        Log($"Staged {Path.GetFileName(path)} — click {((sqlite || plainText || skeldJson) ? "Re-encrypt" : "Decrypt")} to run.{((zip || asset || plainText) ? " General key selected automatically." : "")}");
+        Log($"Staged {Path.GetFileName(path)} — click {((sqlite || plainText || skeldJson) ? "Re-encrypt" : "Decrypt")} to run.{(fh5Asset ? " FH5 General/File profile authenticated automatically." : (zip || asset || plainText) ? " General key selected automatically." : "")}");
         Status("File staged.");
     }
 
@@ -269,6 +306,13 @@ public partial class MainWindow : Window
             Status("Extract-only output: no decrypt/repack action.");
             return;
         }
+        if (Fh5ProfileCrypto.IsPlainPayload(_pendingInput) ||
+            (Fh5ProfileCrypto.IsDatabaseExport(_pendingInput) && !Fh5ProfileCrypto.IsEncryptedProfile(_pendingInput)))
+        {
+            Log("This FH5 profile is already decrypted. FH5 save re-encryption is disabled.");
+            Status("FH5 save already decrypted.");
+            return;
+        }
         if (ProfileCrypto.IsPlainPayload(_pendingInput))
         {
             Log("This is already a decrypted FH6 profile — use Re-encrypt with a profile template.");
@@ -281,7 +325,7 @@ public partial class MainWindow : Window
             Status("Wrong action for a .sqlite.");
             return;
         }
-        if (Fh6ZipArchive.IsWorkspace(_pendingInput) || MotorsportLzxArchive.IsWorkspace(_pendingInput) || IsSkeldJson(_pendingInput) || IsTextIni(_pendingInput))
+        if (Fh5ZipArchive.IsWorkspace(_pendingInput) || Fh6ZipArchive.IsWorkspace(_pendingInput) || MotorsportLzxArchive.IsWorkspace(_pendingInput) || IsSkeldJson(_pendingInput) || IsTextIni(_pendingInput))
         {
             Log("Staged file is already plain text — use Re-encrypt.");
             Status("Wrong action for a decrypted file.");
@@ -291,12 +335,16 @@ public partial class MainWindow : Window
         {
             SetCryptoBusy(true);
             string ext = Path.GetExtension(_pendingInput);
-            if (ProfileCrypto.IsProfilePath(_pendingInput))
+            if (Fh5ProfileCrypto.IsEncryptedProfile(_pendingInput))
+                await DecryptFh5ProfileFlow(_pendingInput);
+            else if (ProfileCrypto.IsProfilePath(_pendingInput))
                 await DecryptProfileFlow(_pendingInput);
             else if (IsSkeld(_pendingInput))
                 DecodeSkeldFlow(_pendingInput);
             else if (string.Equals(ext, ".zip", StringComparison.OrdinalIgnoreCase) || MotorsportCmsArchive.HasZipSignature(_pendingInput))
                 await ExtractZipFlow(_pendingInput);
+            else if (IsFh5AssetContainer(_pendingInput))
+                await DecryptAssetFlow(_pendingInput);
             else if (string.Equals(ext, ".slt", StringComparison.OrdinalIgnoreCase))
                 await DecryptFlow(_pendingInput);                             // gamedb container (explicit)
             else if (string.Equals(ext, ".ini", StringComparison.OrdinalIgnoreCase))
@@ -326,15 +374,22 @@ public partial class MainWindow : Window
             Status("Nothing to re-encrypt.");
             return;
         }
+        if (Fh5ProfileCrypto.IsDatabaseExport(src) || Fh5ProfileCrypto.IsPlainPayload(src) || Fh5ProfileCrypto.IsEncryptedProfile(src))
+        {
+            Log("FH5 saves support decryption only. Save re-encryption and edited-save export are disabled; no output written.");
+            Status("FH5 save decryption only.");
+            return;
+        }
         if (MotorsportTrackArchive.IsExtractOnlyFolder(src))
         {
             Log("Repacking/re-encryption is disabled for this extract-only ZIP output. No files were written.");
             Status("Extract-only output: repacking is not supported.");
             return;
         }
+        bool fh5Workspace = Fh5ZipArchive.IsWorkspace(src);
         bool fh6Workspace = Fh6ZipArchive.IsWorkspace(src);
-        bool profilePayload = !fh6Workspace && (ProfileCrypto.IsDatabaseInput(src) || ProfileCrypto.IsPlainPayload(src));
-        bool zipWorkspace = fh6Workspace || MotorsportLzxArchive.IsWorkspace(src);
+        bool profilePayload = !fh5Workspace && !fh6Workspace && (ProfileCrypto.IsDatabaseInput(src) || ProfileCrypto.IsPlainPayload(src));
+        bool zipWorkspace = fh5Workspace || fh6Workspace || MotorsportLzxArchive.IsWorkspace(src);
         bool skeldJson = !zipWorkspace && IsSkeldJson(src);
         bool plainText = !zipWorkspace && !skeldJson && IsTextIni(src);
         if (!profilePayload && !zipWorkspace && !IsSqlite(src) && !plainText && !skeldJson)
@@ -347,6 +402,7 @@ public partial class MainWindow : Window
         {
             SetCryptoBusy(true);
             if (profilePayload) await EncryptProfileFlow(src);
+            else if (fh5Workspace) await RepackFh5ZipFlow(src);
             else if (fh6Workspace) await RepackFh6ZipFlow(src);
             else if (zipWorkspace) await RepackLzxZipFlow(src);
             else if (skeldJson) EncodeSkeldFlow(src);
@@ -371,7 +427,7 @@ public partial class MainWindow : Window
         try
         {
             Status("Preparing staged GameDB...");
-            using var sourceDb = await Task.Run(() => GameDbSqliteBridge.Materialize(src));
+            using var sourceDb = await Task.Run(() => GameDbSqliteBridge.Materialize(src, allowMotorsport: true));
             Status("Reading cars from staged database...");
             var cars = await Task.Run(() => CarRelatedDbExport.ListCars(sourceDb.SqlitePath));
             if (cars.Count == 0) throw new InvalidOperationException("No cars were found in the staged database.");
@@ -600,11 +656,35 @@ public partial class MainWindow : Window
         }
         for (int number = 1; Directory.Exists(outDir) || File.Exists(outDir); number++)
             outDir = Path.Combine(OutputDirFor(zipPath), Path.GetFileNameWithoutExtension(zipPath) + $".extracted.{number}");
+        if (await Task.Run(() => Fh5ZipArchive.CanHandle(zipPath)))
+        {
+            var progress = new Progress<Fh5ZipArchive.Progress>(p => Status($"Extracting ZIP: {p.Completed:n0}/{p.EntryCount:n0} entries, {p.OutputBytes / 1048576d:n1} MiB…"));
+            var extracted = await Task.Run(() => Fh5ZipArchive.Extract(zipPath, outDir, progress));
+            string profile = extracted.EncryptedEntries > 0 ? "FH5 File / all encrypted MACs verified" : "standard ZIP / no encryption";
+            Log($"Extracted [{profile}, all lengths/CRCs verified] {extracted.EntryCount:n0} entries, {extracted.OutputBytes:n0} bytes -> {outDir}");
+            Log($"    Edit files, then drop the folder or {Fh5ZipArchive.ManifestName} and click Re-encrypt. Keep the metadata and .__original.zip. Adding/removing entries is not supported.");
+            Log("    Large archives use streaming. This does not install files or update an external zipmanifest.xml.");
+            Done(outDir, "ZIP extracted and verified OK.");
+            return;
+        }
         Log($"Extracting FH6 ZIP [{key.Usage}] {Path.GetFileName(zipPath)} …");
         var result = await Task.Run(() => Fh6ZipArchive.Extract(zipPath, outDir, key.DataKey, key.MacKey));
         Log($"    {result.EntryCount:n0} entries, {result.OutputBytes:n0} bytes -> {outDir}");
         Log($"    Edit the extracted files, drop the whole folder or {Fh6ZipArchive.ManifestName}, then click Re-encrypt. Keep .__original.zip; encrypted entries have authenticated headers and chunk MACs.");
         Done(outDir, "FH6 ZIP extracted and verified OK.");
+    }
+
+    private async Task RepackFh5ZipFlow(string workspace)
+    {
+        string name = Fh5ZipArchive.OriginalName(workspace);
+        string output = UniqueOutputPath(Path.Combine(OutputDirFor(workspace), Path.GetFileNameWithoutExtension(name) + ".modded.zip"));
+        Status("Rebuilding and verifying ZIP…");
+        var progress = new Progress<Fh5ZipArchive.Progress>(p => Status($"Checking/rebuilding ZIP: {p.Completed:n0}/{p.EntryCount:n0} entries…"));
+        var result = await Task.Run(() => Fh5ZipArchive.Repack(workspace, output, progress));
+        Log($"Rebuilt [FH5 / standard ZIP, all lengths/CRCs and applicable MACs verified] {result.EntryCount:n0} entries, {result.ChangedEntries:n0} changed -> {output}");
+        if (result.ChangedEntries == 0) Log("    Unchanged workspace: byte-for-byte original ZIP. Untouched payloads and original entry methods/metadata are preserved after edits.");
+        Log("    Original files and previous exports were not overwritten. No game files were installed; external zipmanifest.xml deployment metadata is not updated automatically.");
+        Done(output, "ZIP rebuilt and verified OK.");
     }
 
     private async Task RepackFh6ZipFlow(string workspace)
@@ -649,7 +729,7 @@ public partial class MainWindow : Window
         finally { if (owned && File.Exists(partial)) File.Delete(partial); }
     }
 
-    // Decrypt an FH6 AES or FM TransformIT General asset (PhysicsSettings.ini, etc.)
+    // Decrypt an FH5/FH6 or FM General asset (PhysicsSettings.ini, etc.)
     // to its editable plaintext. Works for any file extension — routing is by structure.
     private async Task DecryptAssetFlow(string srcPath)
     {
@@ -664,21 +744,25 @@ public partial class MainWindow : Window
             bool cms = MotorsportCmsContainer.HasPrefix(encrypted);
             bool fm = !cms && MotorsportAssetContainer.HasFraming(encrypted.Length);
             bool cache = fm && MotorsportCmsCacheContainer.HasHeaderAuthentication(encrypted);
+            bool fh5 = !cms && !fm && Fh5AssetContainer.HasHeaderAuthentication(encrypted.Length, encrypted);
+            if (!cms && !fm && !fh5 && !ForzaZip.ValidateContainer(encrypted, key.DataKey, key.MacKey, out _))
+                throw new InvalidDataException("General/File asset authentication failed. Unsupported FH5/FH6 key/build, wrong format or damaged file. No output was written.");
             byte[] padded = cms ? MotorsportCmsContainer.Decrypt(encrypted)
                 : cache ? MotorsportCmsCacheContainer.Decrypt(encrypted)
+                : fh5 ? Fh5AssetContainer.Decrypt(encrypted)
                 : fm ? MotorsportAssetContainer.Decrypt(encrypted) : ForzaZip.DecryptContainer(encrypted, key.DataKey);
             int length = padded.Length;
-            while (!cms && length > 0 && padded[length - 1] == 0) length--;
+            while (!cms && !fh5 && length > 0 && padded[length - 1] == 0) length--;
             byte[] plaintext = padded[..length];
             int controls = plaintext.Count(b => b < 0x09 || (b > 0x0D && b < 0x20));
             if (plaintext.Length == 0 || controls > Math.Max(2, plaintext.Length / 100))
                 throw new InvalidDataException("Decryption did not produce plausible text. Check the selected key or game version.");
             WriteNewAsset(outPath, plaintext);
-            return (fm, encrypted.Length, plaintext.Length, cms, cache);
+            return (fm, encrypted.Length, plaintext.Length, cms, cache, fh5);
         });
         _templateIni = srcPath;
         _assetTemplates[Path.GetFullPath(outPath)] = srcPath;
-        Log($"Decrypted [{(result.cms ? "Forza Motorsport CMS / gzip CRC checked, no MAC" : result.cache ? "Forza Motorsport CMS cache / authenticated" : result.fm ? "Forza Motorsport General / authenticated" : key.Usage)}] {Path.GetFileName(srcPath)} -> {Path.GetFileName(outPath)}");
+        Log($"Decrypted [{(result.cms ? "Forza Motorsport CMS / gzip CRC checked, no MAC" : result.cache ? "Forza Motorsport CMS cache / authenticated" : result.fh5 ? "FH5 General/File / authenticated" : result.fm ? "Forza Motorsport General / authenticated" : key.Usage)}] {Path.GetFileName(srcPath)} -> {Path.GetFileName(outPath)}");
         Log($"    {result.Item2:n0} -> {result.Item3:n0} bytes (container padding removed)");
         if (result.cms) Log("    CMS deployment also needs matching archive and snapshot-manifest sizes/checksums. This output alone is not a verified in-game override.");
         Done(outPath, "Asset decrypted OK.");
@@ -686,7 +770,7 @@ public partial class MainWindow : Window
 
     // Re-encrypt an edited text asset back into its container, using the original encrypted file
     // as the header/IV/nonce template. Per-slot MACs are recomputed and the length field is fixed
-    // by ForzaZip.EncryptContainer (macKey required).
+    // by the authenticated codec selected from the original template.
     private async Task EncryptAssetFlow(string plainPath)
     {
         var key = DetectedFh6Key();
@@ -698,9 +782,7 @@ public partial class MainWindow : Window
             return;
         }
         Status($"Re-encrypting {Path.GetFileName(plainPath)}…");
-        string stem = Path.GetFileNameWithoutExtension(plainPath);
-        if (stem.EndsWith(".decrypted", StringComparison.OrdinalIgnoreCase)) stem = stem[..^10];
-        string ext = Path.GetExtension(plainPath);
+        var (stem, ext) = DecryptedAssetName(plainPath);
         string outPath = UniqueOutputPath(Path.Combine(OutputDirFor(plainPath), stem + ".modded" + ext));
         var result = await Task.Run(() =>
         {
@@ -709,14 +791,18 @@ public partial class MainWindow : Window
             bool cms = MotorsportCmsContainer.HasPrefix(original);
             bool fm = !cms && MotorsportAssetContainer.HasFraming(original.Length);
             bool cache = fm && MotorsportCmsCacheContainer.HasHeaderAuthentication(original);
+            bool fh5 = !cms && !fm && Fh5AssetContainer.HasHeaderAuthentication(original.Length, original);
+            if (!cms && !fm && !fh5 && !ForzaZip.ValidateContainer(original, key.DataKey, key.MacKey, out _))
+                throw new InvalidDataException("The original General/File template did not authenticate. Use the matching original encrypted asset, not a GameDB or plaintext file.");
             byte[] encrypted = cms ? MotorsportCmsContainer.Encrypt(plaintext, original)
                 : cache ? MotorsportCmsCacheContainer.Encrypt(plaintext, original)
+                : fh5 ? Fh5AssetContainer.Encrypt(plaintext, original)
                 : fm ? MotorsportAssetContainer.Encrypt(plaintext, original)
                 : ForzaZip.EncryptContainer(plaintext, original, key.DataKey, key.MacKey);
             WriteNewAsset(outPath, encrypted);
-            return (fm, plaintext.Length, encrypted.Length, cms, cache);
+            return (fm, plaintext.Length, encrypted.Length, cms, cache, fh5);
         });
-        Log($"Re-encrypted [{(result.cms ? "Forza Motorsport CMS / round-trip verified, no MAC" : result.cache ? "Forza Motorsport CMS cache / authenticated and verified" : result.fm ? "Forza Motorsport General / verified" : key.Usage)}] {Path.GetFileName(plainPath)} -> {Path.GetFileName(outPath)}");
+        Log($"Re-encrypted [{(result.cms ? "Forza Motorsport CMS / round-trip verified, no MAC" : result.cache ? "Forza Motorsport CMS cache / authenticated and verified" : result.fh5 ? "FH5 General/File / authenticated and verified" : result.fm ? "Forza Motorsport General / verified" : key.Usage)}] {Path.GetFileName(plainPath)} -> {Path.GetFileName(outPath)}");
         Log($"    template: {Path.GetFileName(template)}; {result.Item2:n0} -> {result.Item3:n0} bytes");
         if (result.cms) Log("    Repacking CMS and updating its snapshot-manifest checksums is a separate step. Do not replace a General-format INI/JSON with this CMS entry.");
         Done(outPath, "Asset re-encrypted OK.");
@@ -742,8 +828,8 @@ public partial class MainWindow : Window
             throw new InvalidOperationException("Base and donor must be different files.");
 
         Status("Preparing databases for merge...");
-        using var baseDb = await Task.Run(() => GameDbSqliteBridge.Materialize(basePath));
-        using var donorDb = await Task.Run(() => GameDbSqliteBridge.Materialize(overlayPath));
+        using var baseDb = await Task.Run(() => GameDbSqliteBridge.Materialize(basePath, allowMotorsport: true));
+        using var donorDb = await Task.Run(() => GameDbSqliteBridge.Materialize(overlayPath, allowMotorsport: true));
         Status($"Comparing {Path.GetFileName(overlayPath)}...");
         Log($"Previewing donor {Path.GetFileName(overlayPath)} against {Path.GetFileName(basePath)}...");
         var preview = await Task.Run(() => Merge.PreviewMods(baseDb.SqlitePath, donorDb.SqlitePath));
@@ -776,7 +862,7 @@ public partial class MainWindow : Window
         {
             baseDb.VerifySourceUnchanged();
             Status("Encrypting merged GameDB...");
-            await Task.Run(() => GameDbSqliteBridge.EncryptSnapshot(sqliteOutput, basePath, outPath));
+            await Task.Run(() => GameDbSqliteBridge.EncryptSnapshot(sqliteOutput, basePath, outPath, allowMotorsport: true));
         }
 
         _lastDecryptedSqlite = sltOutput ? null : outPath;
@@ -799,8 +885,8 @@ public partial class MainWindow : Window
         if (string.Equals(Path.GetFullPath(moddedPath), Path.GetFullPath(updatedPath), StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Your modded DB and clean updated DB must be different files.");
         Status("Preparing clean updated and old modded databases...");
-        using var updatedDb = await Task.Run(() => GameDbSqliteBridge.Materialize(updatedPath));
-        using var moddedDb = await Task.Run(() => GameDbSqliteBridge.Materialize(moddedPath));
+        using var updatedDb = await Task.Run(() => GameDbSqliteBridge.Materialize(updatedPath, allowMotorsport: true));
+        using var moddedDb = await Task.Run(() => GameDbSqliteBridge.Materialize(moddedPath, allowMotorsport: true));
         Status("Matching the old modded DB to a versioned clean reference...");
         string? baselinePath;
         try { baselinePath = await Task.Run(() => StockDatabaseCatalog.Find(moddedDb.SqlitePath)); }
@@ -832,7 +918,7 @@ public partial class MainWindow : Window
         {
             updatedDb.VerifySourceUnchanged();
             Status("Encrypting the updated GameDB...");
-            await Task.Run(() => GameDbSqliteBridge.EncryptSnapshot(sqliteOutput, updatedPath, outPath));
+            await Task.Run(() => GameDbSqliteBridge.EncryptSnapshot(sqliteOutput, updatedPath, outPath, allowMotorsport: true));
         }
         _lastDecryptedSqlite = sltOutput ? null : outPath;
         _pendingInput = outPath;
@@ -855,7 +941,7 @@ public partial class MainWindow : Window
         var dialog = new OpenFileDialog { Title = $"Old CLEAN GameDB — stamp {stamp}",
             Filter = "GameDB (*.slt;*.sqlite)|*.slt;*.sqlite|All files (*.*)|*.*" };
         if (dialog.ShowDialog(this) != true) return null;
-        return await Task.Run(() => GameDbSqliteBridge.Materialize(dialog.FileName));
+        return await Task.Run(() => GameDbSqliteBridge.Materialize(dialog.FileName, allowMotorsport: true));
     }
 
     private async Task WidebodyMergeFlow(string donorPath)
@@ -868,8 +954,8 @@ public partial class MainWindow : Window
             throw new InvalidOperationException("Base and donor must be different files.");
 
         Status("Preparing databases for widebody import...");
-        using var baseDb = await Task.Run(() => GameDbSqliteBridge.Materialize(basePath));
-        using var donorDb = await Task.Run(() => GameDbSqliteBridge.Materialize(donorPath));
+        using var baseDb = await Task.Run(() => GameDbSqliteBridge.Materialize(basePath, allowMotorsport: true));
+        using var donorDb = await Task.Run(() => GameDbSqliteBridge.Materialize(donorPath, allowMotorsport: true));
         Status("Finding donor widebody kits and stock-body options...");
         var preview = await Task.Run(() => Merge.PreviewWidebodyCars(baseDb.SqlitePath, donorDb.SqlitePath));
         if (preview.Cars.Count == 0)
@@ -902,7 +988,7 @@ public partial class MainWindow : Window
         {
             baseDb.VerifySourceUnchanged();
             Status("Encrypting widebody-import GameDB...");
-            await Task.Run(() => GameDbSqliteBridge.EncryptSnapshot(sqliteOutput, basePath, outPath));
+            await Task.Run(() => GameDbSqliteBridge.EncryptSnapshot(sqliteOutput, basePath, outPath, allowMotorsport: true));
         }
         _lastDecryptedSqlite = sltOutput ? null : outPath;
         _pendingInput = outPath;
@@ -925,9 +1011,10 @@ public partial class MainWindow : Window
             throw new InvalidOperationException("Base and donor must be different files.");
 
         Status("Preparing car DB import...");
-        using var baseDb = await Task.Run(() => GameDbSqliteBridge.Materialize(basePath));
-        using var donorDb = await Task.Run(() => GameDbSqliteBridge.Materialize(donorPath));
+        using var baseDb = await Task.Run(() => GameDbSqliteBridge.Materialize(basePath, allowMotorsport: true));
+        using var donorDb = await Task.Run(() => GameDbSqliteBridge.Materialize(donorPath, allowMotorsport: true));
         var cars = await Task.Run(() => CarRelatedDbExport.ReadCarDonor(donorDb.SqlitePath));
+        var convertedReplacement = await Task.Run(() => ConvertedCarReplacementDb.Read(donorDb.SqlitePath));
         var carIds = cars.Select(c => c.Id).ToArray();
         string carLabel = cars.Count == 1 ? $"car {cars[0].Id}" : $"{cars.Count:n0} cars";
         Status($"Comparing rows for {carLabel}...");
@@ -935,11 +1022,11 @@ public partial class MainWindow : Window
         if (preview.Warnings.Count > 0)
             throw new InvalidDataException("Some donor tables could not be compared; import stopped to avoid a partial car: " +
                                            string.Join("; ", preview.Warnings.Take(3)));
-        var picker = new CarRelatedImportWindow(cars, preview, basePath, donorPath) { Owner = this };
+        var picker = new CarRelatedImportWindow(cars, preview, basePath, donorPath, convertedReplacement is not null) { Owner = this };
         if (picker.ShowDialog() != true) { Status("Car import cancelled."); return; }
         var selected = preview.Tables.SelectMany(t => t.Rows)
             .Where(r => picker.ReplaceConflicts || !r.IsConflict).ToArray();
-        if (selected.Length == 0 && !picker.RebuildCar)
+        if (selected.Length == 0 && !picker.RebuildCar && convertedReplacement is null)
         {
             Log("No new or selected conflicting rows to import; the base already has these rows.");
             Status("No car changes to import.");
@@ -948,7 +1035,7 @@ public partial class MainWindow : Window
 
         bool sltOutput = GameDbSqliteBridge.IsSlt(basePath);
         string carSuffix = cars.Count == 1 ? cars[0].Id.ToString() : cars.Count + "-cars";
-        string stem = Path.GetFileNameWithoutExtension(basePath) + (picker.RebuildCar ? ".carrebuild." : ".carmerge.") + carSuffix + "." +
+        string stem = Path.GetFileNameWithoutExtension(basePath) + (convertedReplacement is not null ? ".carreplace." : picker.RebuildCar ? ".carrebuild." : ".carmerge.") + carSuffix + "." +
                       DateTime.Now.ToString("yyyyMMdd-HHmmss");
         string outPath = UniqueOutputPath(Path.Combine(OutputDirFor(basePath), stem + (sltOutput ? ".slt" : ".sqlite")));
         string sqliteOutput = sltOutput
@@ -961,7 +1048,15 @@ public partial class MainWindow : Window
         Status(picker.RebuildCar ? $"Rebuilding {carLabel} from donor..." : $"Importing {selected.Length:n0} rows for {carLabel}...");
         Action<string> importLog = msg => Dispatcher.Invoke(() => Log("    " + msg));
         int written;
-        if (picker.RebuildCar)
+        if (convertedReplacement is not null)
+        {
+            if (!picker.ReplaceConflicts) throw new InvalidOperationException("Select Use donor values to import this converted replacement.");
+            Status($"Importing converted replacement {carLabel}...");
+            var replaced = await Task.Run(() => Merge.RunConvertedCarReplacement(preview, sqliteOutput, importLog));
+            written = replaced.InsertedRows;
+            Log($"Replacement: removed {replaced.RemovedRows:n0} old target links; inserted {written:n0} donor rows.");
+        }
+        else if (picker.RebuildCar)
         {
             var rebuilt = await Task.Run(() => Merge.RebuildCars(preview, carIds, sqliteOutput, importLog));
             written = rebuilt.InsertedRows;
@@ -973,7 +1068,7 @@ public partial class MainWindow : Window
         {
             baseDb.VerifySourceUnchanged();
             Status("Encrypting imported GameDB...");
-            await Task.Run(() => GameDbSqliteBridge.EncryptSnapshot(sqliteOutput, basePath, outPath));
+            await Task.Run(() => GameDbSqliteBridge.EncryptSnapshot(sqliteOutput, basePath, outPath, allowMotorsport: true));
         }
         _lastDecryptedSqlite = sltOutput ? null : outPath;
         _pendingInput = outPath;
@@ -981,7 +1076,7 @@ public partial class MainWindow : Window
         StagedText.Text = $"Staged: {Path.GetFileName(outPath)}";
         StagedText.Visibility = Visibility.Visible;
         Log($"Imported {written:n0} row(s) for {carLabel} into {Path.GetFileName(outPath)}.");
-        Done(outPath, picker.RebuildCar ? "Car DB rebuild complete." : "Car DB import complete.");
+        Done(outPath, convertedReplacement is not null ? "Converted car replacement import complete." : picker.RebuildCar ? "Car DB rebuild complete." : "Car DB import complete.");
     }
 
     private string UniqueMergeOutput(string baseDb, string extension)
@@ -1011,9 +1106,7 @@ public partial class MainWindow : Window
     {
         if (_assetTemplates.TryGetValue(Path.GetFullPath(plainPath), out string? saved) && File.Exists(saved)) return saved;
         string dir = Path.GetDirectoryName(plainPath) ?? ".";
-        string stem = Path.GetFileNameWithoutExtension(plainPath);
-        if (stem.EndsWith(".decrypted", StringComparison.OrdinalIgnoreCase)) stem = stem[..^10];
-        string ext = Path.GetExtension(plainPath);
+        var (stem, ext) = DecryptedAssetName(plainPath);
         if (_templateIni is not null && File.Exists(_templateIni) &&
             Path.GetFileName(_templateIni).Equals(stem + ext, StringComparison.OrdinalIgnoreCase)) return _templateIni;
         string candidate = Path.Combine(dir, stem + ext);
@@ -1021,6 +1114,17 @@ public partial class MainWindow : Window
         var dlg = new OpenFileDialog { Title = "Select the original encrypted asset", Filter = "All files|*.*" };
         if (dlg.ShowDialog() == true) return _templateIni = dlg.FileName;
         return null;
+    }
+
+    private static (string Stem, string Extension) DecryptedAssetName(string plainPath)
+    {
+        string name = Path.GetFileName(plainPath);
+        // Extensionless assets export as Name.decrypted, not Name.decrypted.ini.
+        // Do not mistake that marker for the original file extension.
+        if (name.EndsWith(".decrypted", StringComparison.OrdinalIgnoreCase)) return (name[..^10], "");
+        string stem = Path.GetFileNameWithoutExtension(name);
+        if (stem.EndsWith(".decrypted", StringComparison.OrdinalIgnoreCase)) stem = stem[..^10];
+        return (stem, Path.GetExtension(name));
     }
 
     private void BrowseTemplate_Click(object sender, RoutedEventArgs e)
@@ -1160,6 +1264,7 @@ public partial class MainWindow : Window
         try
         {
             long length = new FileInfo(path).Length;
+            if (IsFh5AssetContainer(path)) return true; // MAC disambiguates even GameDB-sized slot counts.
             if (length >= 32 && length % 16 == 0)
             {
                 using var stream = File.OpenRead(path);
@@ -1174,6 +1279,19 @@ public partial class MainWindow : Window
         catch { return false; }
     }
 
+    private static bool IsFh5AssetContainer(string path)
+    {
+        try
+        {
+            using var stream = File.OpenRead(path);
+            if (!Fh5AssetContainer.HasFraming(stream.Length)) return false;
+            Span<byte> header = stackalloc byte[36];
+            stream.ReadExactly(header);
+            return Fh5AssetContainer.HasHeaderAuthentication(stream.Length, header);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return false; }
+    }
+
     // A gamedbRC.slt container: 36-byte header + a whole number of 131072+16 = 131088-byte slots.
     private static bool IsGamedbContainer(string path)
     {
@@ -1181,6 +1299,7 @@ public partial class MainWindow : Window
         {
             var kind = GameDbContainerFormat.Detect(path);
             return kind is GameDbContainerFormat.Kind.Fh6Aes36 or
+                GameDbContainerFormat.Kind.Fh5TransformIt36 or
                 GameDbContainerFormat.Kind.ForzaMotorsportTransformIt32;
         }
         catch { return false; }
@@ -1190,6 +1309,13 @@ public partial class MainWindow : Window
     {
         try { return GameDbContainerFormat.Detect(path); }
         catch { return GameDbContainerFormat.Kind.Unknown; }
+    }
+
+    private static ForzaGame TryDetectSqliteGame(string path)
+    {
+        try { return GameDbIdentity.Detect(path); }
+        catch (Exception ex) when (ex is IOException or Microsoft.Data.Sqlite.SqliteException or UnauthorizedAccessException)
+        { return ForzaGame.Unknown; }
     }
 
     private static bool IsTextIni(string path)
@@ -1207,6 +1333,8 @@ public partial class MainWindow : Window
     private void Done(string outPath, string status)
     {
         Status(status);
+        if (Directory.Exists(TrackSpacingLabelExport.Folder(outPath)))
+            Log("Track-width labels: drag " + TrackSpacingLabelExport.Folder(outPath) + " into your game's mediapc\\stripped folder.");
         if (OpenFolderCheck.IsChecked == true) OpenFolder(outPath);
     }
 

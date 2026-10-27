@@ -94,6 +94,7 @@ public static partial class Merge
             throw new InvalidOperationException("Base and donor must be different database files.");
         if (!File.Exists(basePath) || !File.Exists(overlayPath))
             throw new FileNotFoundException("The base or donor database was not found.");
+        GameDbIdentity.RequireSameGame(basePath, overlayPath);
 
         string baseHash = FileHash(basePath), overlayHash = FileHash(overlayPath);
         var tables = new List<ModMergeTable>();

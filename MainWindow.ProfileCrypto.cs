@@ -16,18 +16,18 @@ public partial class MainWindow
         StagedText.Text=$"Staged: {Path.GetFileName(path)}   (FH6 C_ProfileData → {(plain?"Re-encrypt":"Decrypt")})";
         StagedText.Visibility=Visibility.Visible;
         Log(database?"FH6 profile SQLite staged. Re-encrypt puts the edited database into the original C_ProfileData template, retaining its other three sections. This is not a GameDB."
-            :plain?"Decrypted full FH6 profile staged. Legacy full-payload re-encryption is still supported with an original C_ProfileData template."
-            :"FH6 C_ProfileData staged. Decrypt exports its embedded database as a standalone .sqlite without changing the original.");
+            :plain?"Decrypted full FH6 profile staged. Re-encrypt uses the original C_ProfileData template."
+            :"FH6 C_ProfileData staged. Decrypt exports the complete profile as .decrypted without changing the original.");
         Status("FH6 profile staged.");return true;
     }
     private async Task DecryptProfileFlow(string path) {
         Status($"Decrypting FH6 profile {Path.GetFileName(path)}…");
-        string output=UniqueOutputPath(Path.Combine(OutputDirFor(path),Path.GetFileName(path)+".sqlite"));
-        await Task.Run(()=>ProfileCrypto.DecryptDatabase(path,output));
+        string output=UniqueOutputPath(Path.Combine(OutputDirFor(path),Path.GetFileName(path)+".decrypted"));
+        await Task.Run(()=>ProfileCrypto.Decrypt(path,output));
         _templateProfile=path;ProfileTemplateText.Text=path;
-        Log($"Exported FH6 profile SQLite: {Path.GetFileName(output)}. Container and SQLite validated; original unchanged.");
-        Log("Edit the .sqlite in DB Browser or an external SQLite editor, write/export changes, then drop it here and Re-encrypt. The original profile template preserves the other three save sections. Profile Editor / Garage Viewer continue to load complete profiles.");
-        Done(output,"Profile SQLite exported OK.");
+        Log($"Decrypted FH6 profile: {Path.GetFileName(output)}. All save sections retained; original unchanged.");
+        Log("Drop the .decrypted profile here and Re-encrypt with its original profile template. Profile Editor / Garage Viewer can also load the complete decrypted profile.");
+        Done(output,"Profile decrypted OK.");
     }
     private async Task EncryptProfileFlow(string path) {
         string? template=_templateProfile;

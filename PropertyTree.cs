@@ -237,6 +237,7 @@ public sealed class PropertyTree
 
     public List<PropertyNode> Roots { get; } = new();
     byte[] _trailer = System.Array.Empty<byte>();
+    bool _fh2NameOrder;
 
     /// <summary>Any editable value changed since parse.</summary>
     public bool Dirty
@@ -264,27 +265,36 @@ public sealed class PropertyTree
                 yield return pair;
     }
 
-    public static PropertyTree Parse(byte[] data)
+    public static PropertyTree Parse(byte[] data) => ParseCore(data, false);
+
+    /// <summary>FH2 uses [name, hash bits, case flag], not FH6's [case flag, hash bits, name].</summary>
+    public static PropertyTree ParseFh2(byte[] data) => ParseCore(data, true);
+
+    static PropertyTree ParseCore(byte[] data, bool fh2)
     {
-        var tree = new PropertyTree();
+        var tree = new PropertyTree { _fh2NameOrder = fh2 };
         int offset = 0;
         uint count = ReadU32(data, ref offset);
         if (count > 10_000) throw new InvalidDataException($"Unreasonable PropertyTree root count: {count}.");
         for (uint i = 0; i < count; i++)
-            tree.Roots.Add(ReadProperty(data, ref offset));
+            tree.Roots.Add(ReadProperty(data, ref offset, fh2, 0));
         tree._trailer = data[offset..];
         return tree;
     }
 
-    static PropertyNode ReadProperty(byte[] data, ref int offset)
+    static PropertyNode ReadProperty(byte[] data, ref int offset, bool fh2, int depth)
     {
-        byte caseSensitive = data[offset]; offset += 1;
-        uint hashBits = ReadU32(data, ref offset);
+        if (depth > 64) throw new InvalidDataException("Property tree nesting is too deep.");
+        byte caseSensitive = 0;
+        uint hashBits = 32;
+        if (!fh2) { caseSensitive = data[offset++]; hashBits = ReadU32(data, ref offset); }
+        uint nameLen = ReadU32(data, ref offset);
+        if (nameLen > 16_384 || nameLen > data.Length - offset)
+            throw new InvalidDataException($"Unreasonable property name length at 0x{offset - 4:X}.");
+        string name = new UTF8Encoding(false, true).GetString(data, offset, (int)nameLen); offset += (int)nameLen;
+        if (fh2) { hashBits = ReadU32(data, ref offset); caseSensitive = data[offset++]; }
         if (hashBits != 32 || caseSensitive > 1)
             throw new InvalidDataException($"Invalid CHashName metadata (case={caseSensitive}, bits={hashBits}) at 0x{offset - 5:X}.");
-        uint nameLen = ReadU32(data, ref offset);
-        if (nameLen > 16_384) throw new InvalidDataException($"Unreasonable property name length at 0x{offset - 4:X}.");
-        string name = Encoding.UTF8.GetString(data, offset, (int)nameLen); offset += (int)nameLen;
         int typeId = (int)ReadU32(data, ref offset);
         if (!Variants.TryGetValue(typeId, out var spec))
             throw new InvalidDataException($"Unknown CVariant type {typeId} for '{name}' at 0x{offset - 4:X}.");
@@ -323,7 +333,7 @@ public sealed class PropertyTree
             uint childCount = ReadU32(data, ref offset);
             if (childCount > 100_000) throw new InvalidDataException($"Unreasonable child count in '{name}'.");
             for (uint i = 0; i < childCount; i++)
-                node.Children.Add(ReadProperty(data, ref offset));
+                node.Children.Add(ReadProperty(data, ref offset, fh2, depth + 1));
         }
         else throw new InvalidDataException($"Unsupported CVariant type {typeId} for '{name}'.");
 
@@ -335,26 +345,30 @@ public sealed class PropertyTree
     {
         using var ms = new MemoryStream();
         WriteU32(ms, (uint)Roots.Count);
-        foreach (var r in Roots) WriteProperty(ms, r);
+        foreach (var r in Roots) WriteProperty(ms, r, _fh2NameOrder);
         ms.Write(_trailer);
         return ms.ToArray();
     }
 
-    static void WriteProperty(Stream s, PropertyNode node)
+    static void WriteProperty(Stream s, PropertyNode node, bool fh2)
     {
         Span<byte> hdr = stackalloc byte[9];
         hdr[0] = node.CaseSensitive;
         BinaryPrimitives.WriteUInt32LittleEndian(hdr[1..5], node.HashBits);
         byte[] name = Encoding.UTF8.GetBytes(node.Name);
         BinaryPrimitives.WriteUInt32LittleEndian(hdr[5..9], (uint)name.Length);
-        s.Write(hdr);
-        s.Write(name);
+        if (fh2)
+        {
+            WriteU32(s, (uint)name.Length); s.Write(name);
+            WriteU32(s, node.HashBits); s.WriteByte(node.CaseSensitive);
+        }
+        else { s.Write(hdr); s.Write(name); }
         WriteU32(s, (uint)node.TypeId);
 
         if (node.IsBag)
         {
             WriteU32(s, (uint)node.Children.Count);
-            foreach (var c in node.Children) WriteProperty(s, c);
+            foreach (var c in node.Children) WriteProperty(s, c, fh2);
         }
         else
         {

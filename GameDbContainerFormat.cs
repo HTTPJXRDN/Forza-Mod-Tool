@@ -14,7 +14,8 @@ public static class GameDbContainerFormat
         Unknown,
         Sqlite,
         Fh6Aes36,
-        ForzaMotorsportTransformIt32
+        ForzaMotorsportTransformIt32,
+        Fh5TransformIt36
     }
 
     public const int DataChunkSize = 0x20000;
@@ -26,12 +27,12 @@ public static class GameDbContainerFormat
     public static Kind Detect(string path)
     {
         using var stream = File.OpenRead(path);
-        Span<byte> header = stackalloc byte[16];
+        Span<byte> header = stackalloc byte[36];
         int read = stream.Read(header);
         return Detect(stream.Length, header[..read]);
     }
 
-    public static Kind Detect(ReadOnlySpan<byte> file) => Detect(file.Length, file[..Math.Min(file.Length, 16)]);
+    public static Kind Detect(ReadOnlySpan<byte> file) => Detect(file.Length, file[..Math.Min(file.Length, 36)]);
 
     public static Kind Detect(long length, ReadOnlySpan<byte> header)
     {
@@ -40,7 +41,12 @@ public static class GameDbContainerFormat
 
         long fh6Payload = length - Fh6HeaderSize;
         if (fh6Payload >= SlotSize && fh6Payload % SlotSize == 0)
-            return Kind.Fh6Aes36;
+        {
+            // A General/File asset with 2,731 slots has the same length as an
+            // eleven-slot GameDB. Authentication, not size, disambiguates FH5.
+            if (Fh5AssetContainer.HasHeaderAuthentication(length, header)) return Kind.Unknown;
+            return Fh5GameDb.HasHeaderAuthentication(length, header) ? Kind.Fh5TransformIt36 : Kind.Fh6Aes36;
+        }
 
         long motorsportPayload = length - MotorsportHeaderSize;
         if (motorsportPayload >= SlotSize && motorsportPayload % SlotSize == 0)
@@ -53,6 +59,7 @@ public static class GameDbContainerFormat
     {
         Kind.Sqlite => "SQLite",
         Kind.Fh6Aes36 => "FH6 AES GameDB",
+        Kind.Fh5TransformIt36 => "FH5 authenticated GameDB",
         Kind.ForzaMotorsportTransformIt32 => "Forza Motorsport TransformIT GameDB",
         _ => "unknown GameDB format"
     };

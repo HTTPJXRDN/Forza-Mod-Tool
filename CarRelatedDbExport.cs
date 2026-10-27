@@ -61,7 +61,8 @@ public static class CarRelatedDbExport
             DataSource = path, Mode = SqliteOpenMode.ReadOnly, Pooling = false
         }.ToString());
         db.Open();
-        if (Scalar(db, "PRAGMA application_id") != ApplicationId)
+        if (Scalar(db, "PRAGMA application_id") != ApplicationId &&
+            Scalar(db, "PRAGMA application_id") != ConvertedCarReplacementDb.ApplicationId)
             throw new InvalidDataException("Import car DB needs a file made by the updated Export Car Related DB. Re-export the car from its full GameDB first.");
         if (Scalar(db, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('Data_Car','List_UpgradeCarBody')") != 2)
             throw new InvalidDataException("The car export is missing required car/body tables. Re-export it from the full GameDB.");
@@ -82,12 +83,12 @@ public static class CarRelatedDbExport
         ArgumentNullException.ThrowIfNull(carIds);
         var selectedCars = carIds.ToHashSet();
         if (selectedCars.Count == 0) throw new ArgumentException("Select at least one car to export.", nameof(carIds));
-        string carSelection = " IN (" + In(selectedCars) + ")";
         sourcePath = Path.GetFullPath(sourcePath);
         outputPath = Path.GetFullPath(outputPath);
         if (string.Equals(sourcePath, outputPath, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("The car-related donor cannot overwrite its source database.");
         if (!File.Exists(sourcePath)) throw new FileNotFoundException("Source database was not found.", sourcePath);
+        var sourceGame = GameDbIdentity.Detect(sourcePath);
         if (File.Exists(outputPath)) throw new IOException("The output file already exists. Choose a new name.");
         Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
 
@@ -107,22 +108,12 @@ public static class CarRelatedDbExport
                         throw new InvalidOperationException($"Car {carId} is missing or ambiguous in the staged database.");
                 Execute(db, "PRAGMA foreign_keys=OFF");
                 Execute(db, $"PRAGMA application_id={ApplicationId}");
-                Execute(db, "PRAGMA user_version=1");
+                Execute(db, $"PRAGMA user_version={(sourceGame == ForzaGame.Unknown ? 1 : 0x46010000 | (int)sourceGame)}");
 
-                var bodies = Ids(db, "SELECT CarBodyID FROM src.List_UpgradeCarBody WHERE Ordinal" + carSelection);
-                var engines = Ids(db, "SELECT EngineID FROM src.List_UpgradeEngine WHERE Ordinal" + carSelection);
-                var motors = Ids(db, "SELECT MotorID FROM src.List_UpgradeMotor WHERE Ordinal" + carSelection);
-                var drivetrains = Ids(db, "SELECT DrivetrainID FROM src.List_UpgradeDrivetrain WHERE Ordinal" + carSelection);
-                var compounds = Ids(db, "SELECT TireCompoundID FROM src.List_UpgradeTireCompound WHERE Ordinal" + carSelection);
-                var tireParts = Ids(db, "SELECT Id FROM src.List_UpgradeTireCompound WHERE Ordinal" + carSelection);
-                var aero = Ids(db, "SELECT AeroPhysicsID FROM src.List_UpgradeRearWing WHERE Ordinal" + carSelection);
-                aero.UnionWith(Ids(db, $"SELECT AeroPhysicsID FROM src.{Q("List_UpgradeCarBodyFrontBumper")} WHERE CarBodyID IN ({In(bodies)})"));
-                var springs = Ids(db, "SELECT FrontSpringDamperPhysicsID FROM src.List_UpgradeSpringDamper WHERE Ordinal" + carSelection);
-                springs.UnionWith(Ids(db, "SELECT RearSpringDamperPhysicsID FROM src.List_UpgradeSpringDamper WHERE Ordinal" + carSelection));
-                var antiSway = Ids(db, "SELECT AntiSwayPhysicsID FROM src.List_UpgradeAntiSwayFront WHERE Ordinal" + carSelection);
-                antiSway.UnionWith(Ids(db, "SELECT AntiSwayPhysicsID FROM src.List_UpgradeAntiSwayRear WHERE Ordinal" + carSelection));
-                var wheelIds = Ids(db, "SELECT StockWheelID FROM src.Data_Car WHERE Id" + carSelection);
-
+                // One consistent source snapshot for dependency resolution and
+                // copying. Shared rows are copied once, never whole tables.
+                Execute(db, "BEGIN");
+                var scopes = CarRelatedDbScope.ReadRowScopes(db, "src", selectedCars);
                 var tableSql = new List<(string Name, string Sql)>();
                 using (var cmd = db.CreateCommand())
                 {
@@ -131,30 +122,12 @@ public static class CarRelatedDbExport
                     while (reader.Read()) tableSql.Add((reader.GetString(0), reader.GetString(1)));
                 }
                 var warnings = new List<string>();
-                var parts = new HashSet<long>();
-                var partStrings = new HashSet<long>();
-                foreach (var (table, _) in tableSql)
-                {
-                    if (!table.StartsWith("List_Upgrade", StringComparison.OrdinalIgnoreCase)) continue;
-                    var columns = Columns(db, "src", table);
-                    string? scope = Scope(table, columns, carSelection, bodies, engines, motors, drivetrains,
-                        compounds, tireParts, aero, springs, antiSway, wheelIds, parts, partStrings);
-                    if (scope is null) continue;
-                    if (columns.Contains("Id", StringComparer.OrdinalIgnoreCase))
-                        parts.UnionWith(Ids(db, $"SELECT Id FROM src.{Q(table)} WHERE {scope}"));
-                    if (columns.Contains("PartsStringId", StringComparer.OrdinalIgnoreCase))
-                        partStrings.UnionWith(Ids(db, $"SELECT PartsStringId FROM src.{Q(table)} WHERE {scope}"));
-                }
                 int tableCount = 0;
                 long rowCount = 0;
-                Execute(db, "BEGIN");
                 foreach (var (table, createSql) in tableSql)
                 {
-                    if (table.StartsWith("NewProfile_", StringComparison.OrdinalIgnoreCase)) continue;
                     var columns = Columns(db, "src", table);
-                    string? scope = Scope(table, columns, carSelection, bodies, engines, motors, drivetrains,
-                        compounds, tireParts, aero, springs, antiSway, wheelIds, parts, partStrings);
-                    if (scope is null) continue;
+                    if (!scopes.TryGetValue(table, out string? scope)) continue;
                     string select = SelectScoped(table, columns, scope);
                     long count = Scalar(db, "SELECT COUNT(*) FROM (" + select + ")");
                     // Insert each scoped source row once, even when several cars
@@ -175,6 +148,8 @@ public static class CarRelatedDbExport
                     throw new InvalidDataException("The exported donor database failed SQLite quick_check.");
                 result = new Result(outputPath, tableCount, rowCount, warnings);
             }
+            if (!ReadCarDonor(tempPath).Select(c => c.Id).ToHashSet().SetEquals(selectedCars))
+                throw new InvalidDataException("Exported donor car identities did not match the selection.");
             File.Move(tempPath, outputPath);
             return result;
         }
@@ -184,62 +159,10 @@ public static class CarRelatedDbExport
         }
     }
 
-    private static string? Scope(string table, List<string> columns, string carSelection,
-        HashSet<long> bodies, HashSet<long> engines, HashSet<long> motors, HashSet<long> drivetrains,
-        HashSet<long> compounds, HashSet<long> tireParts, HashSet<long> aero,
-        HashSet<long> springs, HashSet<long> antiSway, HashSet<long> wheels, HashSet<long> parts,
-        HashSet<long> partStrings)
-    {
-        bool Has(string col) => columns.Contains(col, StringComparer.OrdinalIgnoreCase);
-        // Explicit exclusion: even a custom schema with Ordinal/CarId must not
-        // export a game-build stamp as if it were car-related data.
-        if (MergeVersionInfo.IsProtectedTable(table)) return null;
-        if (table == "Data_Car") return "Id" + carSelection;
-        if (table is "Data_CarBody" or "Data_CarBody_DummyAxle") return Has("Id") ? $"Id IN ({In(bodies)})" : null;
-        if (table == "CarTrackOffsets") return Has("Id") ? "Id" + carSelection : null;
-        if (table == "CarPartNames") return Has("Id") && parts.Count > 0 ? $"Id IN ({In(parts)})" : null;
-        if (table == "List_PartsStrings") return Has("Id") && partStrings.Count > 0 ? $"Id IN ({In(partStrings)})" : null;
-        if (table == "Data_Engine") return Has("EngineID") ? $"EngineID IN ({In(engines)})" : null;
-        if (table == "Data_Motor") return Has("MotorID") ? $"MotorID IN ({In(motors)})" : null;
-        if (table == "Data_Drivetrain") return Has("DrivetrainID") ? $"DrivetrainID IN ({In(drivetrains)})" : null;
-        if (table == "List_TireCompound") return Has("TireCompoundID") ? $"TireCompoundID IN ({In(compounds)})" : null;
-        if (table == "List_Wheels") return Has("Id") ? $"Id IN ({In(wheels)})" : null;
-        if (table == "List_UpgradeTireCompoundFictionModOverride")
-            return Has("PartId") ? $"PartId IN ({In(tireParts)})" : null;
-        if (table == "List_AeroPhysics") return Has("Ordinal")
-            ? $"Ordinal{carSelection} OR AeroPhysicsID IN ({In(aero)})" : $"AeroPhysicsID IN ({In(aero)})";
-        if (table == "List_SpringDamperPhysics") return Has("Ordinal")
-            ? $"Ordinal{carSelection} OR SpringDamperPhysicsID IN ({In(springs)})" : $"SpringDamperPhysicsID IN ({In(springs)})";
-        if (table == "List_AntiSwayPhysics") return Has("Ordinal")
-            ? $"Ordinal{carSelection} OR AntiSwayPhysicsID IN ({In(antiSway)})" : $"AntiSwayPhysicsID IN ({In(antiSway)})";
-        if (table.StartsWith("List_UpgradeEngine", StringComparison.OrdinalIgnoreCase) && Has("EngineID") && !Has("Ordinal"))
-            return $"EngineID IN ({In(engines)})";
-        if (table.StartsWith("List_UpgradeMotor", StringComparison.OrdinalIgnoreCase) && Has("MotorID") && !Has("Ordinal"))
-            return $"MotorID IN ({In(motors)})";
-        if (table.StartsWith("List_UpgradeDrivetrain", StringComparison.OrdinalIgnoreCase) && Has("DrivetrainID") && !Has("Ordinal"))
-            return $"DrivetrainID IN ({In(drivetrains)})";
-        if (table.StartsWith("List_UpgradeCarBody", StringComparison.OrdinalIgnoreCase) && Has("CarBodyID") && !Has("Ordinal"))
-            return $"CarBodyID IN ({In(bodies)})";
-        if (Has("Ordinal")) return "Ordinal" + carSelection;
-        if (Has("CarId")) return Q(columns.First(c => c.Equals("CarId", StringComparison.OrdinalIgnoreCase))) + carSelection;
-        return null;
-    }
-
     private static string SelectScoped(string table, List<string> columns, string scope)
     {
         string projection = string.Join(",", columns.Select(Q));
         return $"SELECT {projection} FROM src.{Q(table)} WHERE {scope}";
-    }
-    private static string In(HashSet<long> ids) => ids.Count == 0 ? "NULL" : string.Join(",", ids.Order());
-    private static HashSet<long> Ids(SqliteConnection db, string sql)
-    {
-        var values = new HashSet<long>();
-        using var cmd = db.CreateCommand();
-        cmd.CommandText = sql;
-        using var reader = cmd.ExecuteReader();
-        while (reader.Read())
-            if (!reader.IsDBNull(0)) values.Add(Convert.ToInt64(reader.GetValue(0)));
-        return values;
     }
     private static List<string> Columns(SqliteConnection db, string schema, string table)
     {

@@ -11,12 +11,13 @@ public static class EmoteUnlockState
     const int HeaderLength = 28;
     const int ItemsOffset = 32;
     public sealed record Emote(ulong Id, string Name);
-    public static IReadOnlyList<Emote> AllEmotes => EmoteCatalog.Items;
+    public static IReadOnlyList<Emote> AllEmotes => ProfileGameData.Current?.Emotes ?? EmoteCatalog.Items;
     public readonly record struct Status(int Unlocked, int Total, int InventoryEntries);
     sealed record Inventory(byte[] Header, List<ulong> Items);
 
     public static bool TryRead(ProfileContainer? container, out Status status)
     {
+        using var definitions = ProfileGameData.Use(container);
         status = default;
         if (!TryRecord(container, out var record) || !TryParse(record!.Payload, out var inventory)) return false;
         var ids = inventory!.Items.ToHashSet();
@@ -25,10 +26,14 @@ public static class EmoteUnlockState
     }
 
     public static bool TryUnlockAll(ProfileContainer? container, out int added)
-        => TryUnlockSelected(container, AllEmotes.Select(e => e.Id), out added);
+    {
+        using var definitions = ProfileGameData.Use(container);
+        return TryUnlockSelected(container, AllEmotes.Select(e => e.Id), out added);
+    }
 
     public static bool TryReadUnlocked(ProfileContainer? container, out ulong[] ids)
     {
+        using var definitions = ProfileGameData.Use(container);
         ids = Array.Empty<ulong>();
         if (!TryRecord(container, out var record) || !TryParse(record!.Payload, out var inventory)) return false;
         ids = inventory!.Items.ToArray(); return true;
@@ -36,6 +41,7 @@ public static class EmoteUnlockState
 
     public static bool TryUnlockSelected(ProfileContainer? container, IEnumerable<ulong>? selectedIds, out int added)
     {
+        using var definitions = ProfileGameData.Use(container);
         added = 0;
         var selected = selectedIds?.ToHashSet();
         if (selected is null || selected.Count == 0 || selected.Any(id => !AllEmotes.Any(e => e.Id == id))) return false;

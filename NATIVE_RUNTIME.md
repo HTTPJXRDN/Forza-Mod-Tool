@@ -1,15 +1,18 @@
-# Optional Motorsport LZX runtime
+# Required DLL for FH2 saves and FM8 LZX
 
-This public package does **not** redistribute xcompress64.dll. The adapter uses Microsoft's XMem LZX API; the locally tested binary came from the user's existing ForzaTechStudio tools. That project's MIT source license does not establish redistribution rights for this native Microsoft binary.
+**x64 xcompress64.dll** is needed for:
 
-For supported Motorsport method-21 camera/car ZIP rebuilding and track extraction, supply your own legally obtained **x64 xcompress64.dll** and keep it in the same directory as FH6ModStudio.exe. Do not substitute a 32-bit DLL or an untrusted download. Confirm that you may use/distribute your copy before including it in a shared package.
+- FH2/Azimuth save loading, editing and export.
+- FM8 method-21 LZX camera/car ZIP rebuilding and track extraction.
 
-Without this optional dependency, LZX operations fail with a setup message. FH6 ZIPs, database/asset crypto, DB Browser, Car Editor and existing animation helpers do not require it.
+The DLL is not included in the release. Download it separately:
 
-## Download/setup reference
+1. Open [xcompress64.dll on ForzaTechStudio's GitHub](https://github.com/D3FEKT/ForzaTechStudio/blob/Main/ForzaTechStudio/Native/xcompress64.dll).
+2. Click **Download raw file** on GitHub.
+3. Put `xcompress64.dll` in the same folder as `FH6ModStudio.exe`, then restart the tool.
 
-Our local verification used the DLL supplied with **ForzaTechStudio V0.9.2.2**. Start at the upstream [ForzaTechStudio releases page](https://github.com/D3FEKT/ForzaTechStudio/releases/tag/V0.9.2.2), download its official release package, and locate `xcompress64.dll` in the extracted files. Its [method-21 documentation](https://github.com/D3FEKT/ForzaTechStudio/blob/Main/docs/create-zip.md) confirms that the tool ships this runtime. If you are permitted to use that copy, place only the x64 DLL beside `FH6ModStudio.exe`; you do not need to run ForzaTechStudio for this tool's LZX operations.
+Use the 64-bit file at that link. You do not need to install or run ForzaTechStudio.
 
-This link identifies the tested upstream distribution, not a grant of Microsoft DLL redistribution rights. Do not use third-party DLL download sites or assume that every similarly named binary is compatible.
+Without the DLL, FH2 save and FM8 LZX operations are unavailable. Car Editor, DB Browser, database/asset crypto, FH6 ZIPs and the included animation helpers still work.
 
-For a source build, place the DLL beside the built EXE yourself. The public project deliberately does not copy/bundle the DLL. The private development build retains its existing local copy.
+For a source build, put the DLL beside the built EXE. The public source project does not copy or bundle it.
