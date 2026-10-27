@@ -45,7 +45,7 @@ public partial class CarEditorView
         if (_conn == null || CarList.SelectedItems.Count == 0) return false;
         if (!HasCarReleaseDates)
         {
-            reason = "No supported FH6 car release-date mapping in this DB.";
+            reason = "No supported car release-date mapping in this DB.";
             return false;
         }
         var carIds = CarList.SelectedItems.Cast<CarItem>()

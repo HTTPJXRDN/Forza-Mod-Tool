@@ -12,6 +12,8 @@ public static class SwatchThumbnailDecoder
 {
     public static BitmapSource Decode(byte[] bytes)
     {
+        if (bytes.Length >= 8 && BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(4)) == 65537)
+            return Fh2ThumbnailDecoder.Decode(bytes);
         var data = bytes.AsSpan();
         if (data.Length < 140 || !data[..4].SequenceEqual("burG"u8) ||
             !data.Slice(20,4).SequenceEqual("BCXT"u8) || !data.Slice(44,4).SequenceEqual("HCXT"u8))

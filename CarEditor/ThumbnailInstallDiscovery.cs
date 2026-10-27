@@ -8,8 +8,8 @@ namespace FH6CarEditor;
 /// <summary>Bounded, read-only install discovery; never recursively searches a drive.</summary>
 public static class ThumbnailInstallDiscovery
 {
-    static bool IsGame(string name, bool motorsport) =>
-        Regex.Replace(name, @"\s+", "").Equals(motorsport ? "ForzaMotorsport" : "ForzaHorizon6", StringComparison.OrdinalIgnoreCase);
+    static bool IsGame(string name, string game) =>
+        Regex.Replace(name, @"\s+", "").Equals(game.Replace(" ", ""), StringComparison.OrdinalIgnoreCase);
 
     static string? Value(string text, string key)
     {
@@ -22,6 +22,9 @@ public static class ThumbnailInstallDiscovery
     // Public pure-filesystem entry point also permits testing custom libraries
     // without changing a user's registry or Steam configuration.
     public static IEnumerable<string> SteamGameRoots(string steamRoot, bool motorsport)
+        => SteamGameRoots(steamRoot, motorsport ? "Forza Motorsport" : "Forza Horizon 6");
+
+    static IEnumerable<string> SteamGameRoots(string steamRoot, string gameName)
     {
         var libraries = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { steamRoot };
         try {
@@ -42,7 +45,7 @@ public static class ThumbnailInstallDiscovery
                     foreach (string manifest in Directory.EnumerateFiles(apps, "appmanifest_*.acf").Take(4096)) {
                         try {
                             string text = ReadSmall(manifest);
-                            if (!IsGame(Value(text, "name") ?? "", motorsport)) continue;
+                            if (!IsGame(Value(text, "name") ?? "", gameName)) continue;
                             string? directory = Value(text, "installdir");
                             // Steam install names are a single directory, not an arbitrary path.
                             if (string.IsNullOrWhiteSpace(directory) || directory is "." or ".." || directory.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0) continue;
@@ -50,13 +53,18 @@ public static class ThumbnailInstallDiscovery
                         } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException) { }
                     }
             } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
-            foreach (string name in motorsport ? new[] { "Forza Motorsport", "ForzaMotorsport" } : new[] { "ForzaHorizon6", "Forza Horizon 6" })
+            foreach (string name in new[] { gameName, gameName.Replace(" ", "") })
                 found.Add(Path.Combine(apps, "common", name));
         }
         return found;
     }
 
     public static IEnumerable<string> GameRoots(bool motorsport)
+        => GameRoots(motorsport ? "Forza Motorsport" : "Forza Horizon 6");
+
+    internal static IEnumerable<string> Horizon5GameRoots() => GameRoots("Forza Horizon 5");
+
+    static IEnumerable<string> GameRoots(string gameName)
     {
         var steam = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var roots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -72,7 +80,7 @@ public static class ThumbnailInstallDiscovery
                         foreach (string name in uninstall.GetSubKeyNames()) {
                             try {
                                 using var app = uninstall.OpenSubKey(name);
-                                if (app?.GetValue("DisplayName") is string title && IsGame(title, motorsport) &&
+                                if (app?.GetValue("DisplayName") is string title && IsGame(title, gameName) &&
                                     app.GetValue("InstallLocation") is string path && !string.IsNullOrWhiteSpace(path)) roots.Add(path);
                             } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SecurityException) { }
                         }
@@ -81,10 +89,10 @@ public static class ThumbnailInstallDiscovery
         foreach (var drive in DriveInfo.GetDrives().Where(d => d.DriveType == DriveType.Fixed)) {
             steam.Add(Path.Combine(drive.Name, "SteamLibrary"));
             steam.Add(Path.Combine(drive.Name, "Program Files (x86)", "Steam"));
-            roots.Add(Path.Combine(drive.Name, "XboxGames", motorsport ? "Forza Motorsport" : "Forza Horizon 6", "Content"));
+            roots.Add(Path.Combine(drive.Name, "XboxGames", gameName, "Content"));
         }
         foreach (string path in steam)
-            foreach (string game in SteamGameRoots(path, motorsport)) roots.Add(game);
+            foreach (string game in SteamGameRoots(path, gameName)) roots.Add(game);
         return roots;
     }
 }

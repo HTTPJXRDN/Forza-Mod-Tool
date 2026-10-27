@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
 using Microsoft.Win32;
+using FH6LocalCryptoTool;
 
 namespace FH6CarEditor;
 
@@ -8,30 +9,31 @@ public partial class CarEditorView
 {
     CarThumbnailLibrary? _thumbnailLibrary;
     int _thumbnailSourceRevision, _thumbnailPreviewRevision;
-    bool ThumbnailMotorsport => HasNativeTrackOffsets;
+    ForzaGame ThumbnailGame => _editorGame == ForzaGame.Unknown ? ForzaGame.Horizon6 : _editorGame;
 
     async Task ConfigureCarThumbnailsAsync(string? manualSource = null, bool resetAuto = false)
     {
         int revision = ++_thumbnailSourceRevision;
         ++_thumbnailPreviewRevision;
-        bool motorsport = ThumbnailMotorsport;
+        ForzaGame game = ThumbnailGame;
+        bool motorsport = game == ForzaGame.Motorsport8;
         string? database = _origPath;
         _thumbnailLibrary = null;
         ThumbnailSource.Text = "Finding model thumbnails…";
         ShowCarPreviewPlaceholder("Finding model thumbnails…");
         try {
-            if (resetAuto) CarThumbnailLibrary.SaveSource(motorsport, null);
+            if (resetAuto) CarThumbnailLibrary.SaveSource(game, null);
             var library = await Task.Run(() => {
-                string? preferred = manualSource ?? (resetAuto ? null : CarThumbnailLibrary.SavedSource(motorsport));
+                string? preferred = manualSource ?? (resetAuto ? null : CarThumbnailLibrary.SavedSource(game));
                 // Upgrade the old auto/offline fallback to the complete stock packs.
                 // Explicit picks during this request still win.
                 if (manualSource == null && preferred != null && Path.GetFileName(preferred).Equals("OfflineThumbnails.zip",StringComparison.OrdinalIgnoreCase))
-                    preferred = CarThumbnailLibrary.FindSources(database,motorsport).FirstOrDefault(Directory.Exists) ?? preferred;
+                    preferred = CarThumbnailLibrary.FindSources(database,game).FirstOrDefault(Directory.Exists) ?? preferred;
                 if (preferred != null) {
                     try { return new CarThumbnailLibrary(preferred); }
                     catch (Exception ex) when (manualSource == null && ex is IOException or UnauthorizedAccessException) { }
                 }
-                foreach (string path in CarThumbnailLibrary.FindSources(database, motorsport)) {
+                foreach (string path in CarThumbnailLibrary.FindSources(database, game)) {
                     try { return new CarThumbnailLibrary(path); }
                     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
                 }
@@ -43,12 +45,12 @@ public partial class CarEditorView
                 ThumbnailSource.Text = $"{Path.GetFileName(library.SourcePath)} · {library.Count} model thumbnails";
                 ThumbnailSource.ToolTip = library.SourcePath;
                 if (manualSource != null) {
-                    try { CarThumbnailLibrary.SaveSource(motorsport, library.SourcePath); }
+                    try { CarThumbnailLibrary.SaveSource(game, library.SourcePath); }
                     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Log("Preview source works, but its preference could not be saved.", "warn"); }
                 }
             } else {
                 ThumbnailSource.Text = motorsport ? "FM8: choose converted PNG/WebP thumbnails" : "Thumbnail source not found · choose a folder/archive";
-                ThumbnailSource.ToolTip = motorsport ? "Native FM8 LZX archives are not decoded here. Extracted PC BC7 swatchbin or converted images can be named thumbnail_<Car ID>_big.png or <MediaName>.png." : "Choose media/Stripped to read RC*.zip thumbnails in memory, or choose an image folder/archive manually.";
+                ThumbnailSource.ToolTip = motorsport ? "Native FM8 LZX archives are not decoded here. Extracted PC BC7 swatchbin or converted images can be named thumbnail_<Car ID>_big.png or <MediaName>.png." : "Choose the game's folder, Mount, media or media/stripped to read RC*.zip thumbnails in memory. The installation folder can have any name.";
             }
             await UpdateCarThumbnailAsync();
         } catch (Exception ex) {
@@ -95,7 +97,7 @@ public partial class CarEditorView
     async void ThumbnailAuto_Click(object sender, RoutedEventArgs e) => await ConfigureCarThumbnailsAsync(resetAuto: true);
     async void ThumbnailFolder_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new OpenFolderDialog { Title = "Choose FH6 media/Stripped folder, or model thumbnail image folder" };
+        var dialog = new OpenFolderDialog { Title = $"Choose {EditorGameName} game, Mount, media or thumbnail folder" };
         if (dialog.ShowDialog(Window.GetWindow(this)) == true) await ConfigureCarThumbnailsAsync(dialog.FolderName);
     }
     async void ThumbnailArchive_Click(object sender, RoutedEventArgs e)

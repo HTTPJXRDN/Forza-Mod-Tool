@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Microsoft.Win32;
+using FH6LocalCryptoTool;
 
 namespace FH6CarEditor;
 
@@ -28,11 +29,29 @@ public sealed class CarThumbnailLibrary
 
     public CarThumbnailLibrary(string path)
     {
-        SourcePath = Path.GetFullPath(path);
+        SourcePath = NormalizeSource(Path.GetFullPath(path));
         if (Directory.Exists(SourcePath)) IndexFolder(SourcePath, 0, new int[1]);
         else if (File.Exists(SourcePath) && Path.GetExtension(SourcePath).Equals(".zip", StringComparison.OrdinalIgnoreCase)) IndexArchive(SourcePath);
         else throw new FileNotFoundException("Choose a thumbnail folder or ZIP archive.", SourcePath);
-        if (Count == 0) throw new InvalidDataException("No supported model thumbnails found. Choose FH6 media/Stripped (RC*.zip), OfflineThumbnails.zip or images named by Car ID / MediaName.");
+        if (Count == 0) throw new InvalidDataException("No supported model thumbnails found. Choose the game's media/stripped folder (RC*.zip), OfflineThumbnails.zip or images named by Car ID / MediaName.");
+    }
+
+    static string NormalizeSource(string path)
+    {
+        if (!Directory.Exists(path) || Directory.EnumerateFiles(path).Any(p => Extensions.Contains(Path.GetExtension(p)) &&
+            (IdName.IsMatch(Path.GetFileNameWithoutExtension(p)) || OfflineName.IsMatch(Path.GetFileNameWithoutExtension(p)) ||
+             Regex.IsMatch(Path.GetFileNameWithoutExtension(p), @"^[A-Za-z0-9]+_[A-Za-z0-9_]+_\d{2}(?:_big)?$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)))) return path;
+        string? native = Fh2ThumbnailDiscovery.NativeFolders(path).FirstOrDefault();
+        if (native != null) return native;
+        // A package may be wrapped in an arbitrarily named outer directory.
+        // Inspect one bounded child level, not the game's complete asset tree.
+        foreach (string child in Directory.EnumerateDirectories(path).Take(128))
+        {
+            if ((File.GetAttributes(child) & FileAttributes.ReparsePoint) != 0) continue;
+            native = Fh2ThumbnailDiscovery.NativeFolders(child).FirstOrDefault();
+            if (native != null) return native;
+        }
+        return path;
     }
 
     void IndexFolder(string folder, int depth, int[] count)
@@ -136,7 +155,16 @@ public sealed class CarThumbnailLibrary
     }
 
     public static IEnumerable<string> FindSources(string? databasePath, bool motorsport)
+        => FindSources(databasePath, motorsport ? ForzaGame.Motorsport8 : ForzaGame.Horizon6);
+
+    public static IEnumerable<string> FindSources(string? databasePath, ForzaGame game)
     {
+        if (game == ForzaGame.Horizon2)
+        {
+            foreach (string path in Fh2ThumbnailDiscovery.Sources(databasePath)) yield return path;
+            yield break;
+        }
+        bool motorsport = game == ForzaGame.Motorsport8;
         // FM8's native LZX archives are not supported by the stock-image reader.
         if (motorsport) yield break;
         // Only inspect known paths, never recursively search drives. DB location wins.
@@ -145,15 +173,15 @@ public sealed class CarThumbnailLibrary
             var parent = new DirectoryInfo(Path.GetDirectoryName(Path.GetFullPath(databasePath))!);
             for (int i = 0; parent != null && parent.Parent != null && i < 10; i++, parent = parent.Parent) roots.Add(parent.FullName);
         }
-        roots.AddRange(ThumbnailInstallDiscovery.GameRoots(motorsport));
-        // Prefer FH6's complete stock texture packs; keep the offline WebP fallback.
+        roots.AddRange(game == ForzaGame.Horizon5 ? ThumbnailInstallDiscovery.Horizon5GameRoots() : ThumbnailInstallDiscovery.GameRoots(motorsport));
+        // Prefer the selected game's full stock packs; keep its offline fallback.
         // Native FM8 ZIPs use LZX compression, which this read-only preview does not extract.
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         // Search all installs for the full packs before offering a sparse offline ZIP.
         foreach (string root in roots) {
             foreach (string suffix in new[] { "", "Stripped", @"media\Stripped", @"Content\media\Stripped" }) {
                 string folder = Path.Combine(root,suffix);
-                if (seen.Add(folder) && Directory.Exists(folder) && File.Exists(Path.Combine(folder,"RC0.zip"))) yield return folder;
+                if (seen.Add(folder) && Directory.Exists(folder) && File.Exists(Path.Combine(folder,"RC0.zip")) && MatchesGame(folder, game)) yield return folder;
             }
         }
         foreach (string root in roots) {
@@ -164,22 +192,49 @@ public sealed class CarThumbnailLibrary
         }
     }
 
+    static bool MatchesGame(string folder, ForzaGame game)
+    {
+        string database = Path.Combine(folder, "gamedbRC.slt");
+        if (!File.Exists(database)) return true;
+        try
+        {
+            var format = GameDbContainerFormat.Detect(database);
+            return format switch
+            {
+                GameDbContainerFormat.Kind.Fh5TransformIt36 => game == ForzaGame.Horizon5,
+                GameDbContainerFormat.Kind.Fh6Aes36 => game == ForzaGame.Horizon6,
+                GameDbContainerFormat.Kind.Sqlite => GameDbIdentity.Detect(database) == game,
+                _ => false
+            };
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Microsoft.Data.Sqlite.SqliteException) { return false; }
+    }
+
     static string SettingsFile => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ForzaModTool", "car-thumbnail-sources.json");
-    public static string? SavedSource(bool motorsport)
+    static readonly object SettingsSync = new();
+    static string GameKey(ForzaGame game) => game switch { ForzaGame.Horizon2 => "FH2", ForzaGame.Horizon5 => "FH5", ForzaGame.Horizon6 => "FH6", ForzaGame.Motorsport8 => "FM8", _ => throw new ArgumentException("Choose a supported thumbnail game.", nameof(game)) };
+    static Dictionary<string, string> ReadSources()
     {
         try {
-            if (!File.Exists(SettingsFile) || new FileInfo(SettingsFile).Length > 16384) return null;
-            var paths = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(SettingsFile));
-            return paths?.GetValueOrDefault(motorsport ? "FM8" : "FH6");
-        } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { return null; }
+            if (File.Exists(SettingsFile) && new FileInfo(SettingsFile).Length <= 16384)
+                return JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(SettingsFile)) ?? new();
+        } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { }
+        return new();
     }
-    public static void SaveSource(bool motorsport, string? source)
+    public static string? SavedSource(bool motorsport) => SavedSource(motorsport ? ForzaGame.Motorsport8 : ForzaGame.Horizon6);
+    public static string? SavedSource(ForzaGame game)
     {
-        var paths = new Dictionary<string, string>();
-        foreach (bool fm in new[] { false, true }) if (SavedSource(fm) is string previous) paths[fm ? "FM8" : "FH6"] = previous;
-        string key = motorsport ? "FM8" : "FH6";
-        if (source == null) paths.Remove(key);else paths[key] = Path.GetFullPath(source);
-        Directory.CreateDirectory(Path.GetDirectoryName(SettingsFile)!);
-        File.WriteAllText(SettingsFile, JsonSerializer.Serialize(paths));
+        lock (SettingsSync) return ReadSources().GetValueOrDefault(GameKey(game));
+    }
+    public static void SaveSource(bool motorsport, string? source) => SaveSource(motorsport ? ForzaGame.Motorsport8 : ForzaGame.Horizon6, source);
+    public static void SaveSource(ForzaGame game, string? source)
+    {
+        lock (SettingsSync)
+        {
+            var paths = ReadSources(); string key = GameKey(game);
+            if (source == null) paths.Remove(key); else paths[key] = Path.GetFullPath(source);
+            Directory.CreateDirectory(Path.GetDirectoryName(SettingsFile)!);
+            File.WriteAllText(SettingsFile, JsonSerializer.Serialize(paths));
+        }
     }
 }

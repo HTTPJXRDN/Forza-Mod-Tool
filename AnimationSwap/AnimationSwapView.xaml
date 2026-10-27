@@ -1,6 +1,7 @@
 <UserControl x:Class="FH6AnimationSwap.AnimationSwapView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:help="clr-namespace:FH6LocalCryptoTool.Help"
              Background="{DynamicResource AppGrad}"
              TextOptions.TextFormattingMode="Ideal"
              UseLayoutRounding="True">
@@ -101,9 +102,12 @@
             Background="{DynamicResource CardHeadGrad}" Padding="20,11"
             BorderBrush="{DynamicResource PinkAccentLine}" BorderThickness="0,0,0,2">
       <StackPanel>
+        <StackPanel Orientation="Horizontal">
         <TextBlock FontSize="22" FontWeight="Bold">
           <Run Text="Animation" Foreground="{DynamicResource Pink}"/><Run Text=" Swap"/>
         </TextBlock>
+        <help:TabHelpButton Topic="AnimationSwap"/>
+        </StackPanel>
         <TextBlock Margin="0,3,0,0" Foreground="{DynamicResource Dim}" FontSize="12" TextWrapping="Wrap"
                    Text="Swap complete door motions and other CLIPD animation channels, edit full car ZIPs, and apply the database-stance compatibility patch."/>
       </StackPanel>

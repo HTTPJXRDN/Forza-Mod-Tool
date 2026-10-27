@@ -700,6 +700,9 @@ static class CarDisplayNames
     public static string? Name(string media) =>
         media != null && Entries.TryGetValue(media, out var entry) ? entry.Name : null;
 
+    internal static string? ApprovedName(long id) =>
+        Entries.Values.FirstOrDefault(entry => entry.Id == id && !entry.InitialDrive)?.Name;
+
     public static string Manufacturer(long id, string media, string fallback) =>
         media != null && Entries.TryGetValue(media, out var entry) && entry.Id == id ? entry.Manufacturer : fallback;
 
