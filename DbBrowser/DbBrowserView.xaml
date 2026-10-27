@@ -1,5 +1,6 @@
 <UserControl x:Class="FH6LocalCryptoTool.DbBrowser.DbBrowserView"
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:help="clr-namespace:FH6LocalCryptoTool.Help"
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" AllowDrop="True" Drop="File_Drop" DragOver="File_DragOver"
  Background="#1D1D1F" Foreground="#F4F4F6" FontSize="12" Loaded="View_Loaded" PreviewKeyDown="Browser_KeyDown">
  <UserControl.Resources>
@@ -78,11 +79,14 @@
    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
    <Border x:Name="BrowserHeader" Style="{StaticResource DbHeader}" Margin="-12,-12,-12,18">
     <StackPanel VerticalAlignment="Center">
+     <StackPanel Orientation="Horizontal">
      <TextBlock FontSize="22" FontWeight="Bold"><Run Text="DB" Foreground="{StaticResource DbPink}"/><Run Text=" Browser"/></TextBlock>
+     <help:TabHelpButton Topic="DbBrowser"/>
+     </StackPanel>
      <TextBlock Text="SQLite workspace • encrypted SLT support • originals stay untouched" Foreground="#9C9CA2" FontSize="12" Margin="0,3,0,0" TextWrapping="Wrap"/>
     </StackPanel>
    </Border>
-   <StackPanel Grid.Row="1" Margin="0,0,0,10">
+   <StackPanel x:Name="DatabaseToolbar" Grid.Row="1" Margin="0,0,0,10">
     <WrapPanel><Button Content="New DB" Click="NewDatabase_Click"/><Button Content="Open database…" Click="Open_Click"/><Button x:Name="WriteButton" Content="Write changes" Click="Write_Click" ToolTip="Commit pending edits to the private working copy, not the input file."/>
      <Button x:Name="RevertButton" Content="Revert changes" Click="Revert_Click" ToolTip="Undo pending edits since the last Write changes or export."/>
      <Button x:Name="ExportButton" Content="Export as…" Click="Export_Click" Background="#E8175D" BorderBrush="#E8175D"/>
@@ -91,10 +95,10 @@
     </WrapPanel>
     <TextBlock x:Name="LoadedPath" Text="Open database / Drop a FH6 gamedbRC.slt or a .sqlite or Forza Motorsport gamedb.sqlite file here to begin." Foreground="#9C9CA2" Margin="0,8,0,0" TextWrapping="Wrap"/>
    </StackPanel>
-   <Grid Grid.Row="2" x:Name="DatabaseArea" IsEnabled="False">
-    <Grid.ColumnDefinitions><ColumnDefinition Width="*" MinWidth="260"/><ColumnDefinition Width="5"/><ColumnDefinition Width="285" MinWidth="175"/></Grid.ColumnDefinitions>
+   <Grid Grid.Row="2" x:Name="DatabaseArea">
+    <Grid.ColumnDefinitions><ColumnDefinition Width="*" MinWidth="260"/><ColumnDefinition Width="5"/><ColumnDefinition Width="0.38*" MinWidth="175"/></Grid.ColumnDefinitions>
     <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-    <TabControl x:Name="BrowserTabs" Margin="0,0,8,0">
+    <TabControl x:Name="BrowserTabs" Margin="0,0,8,0" IsEnabled="False">
      <TabItem Header="Database Structure">
       <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="2*"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
        <WrapPanel Margin="0,0,0,8"><Button Content="Create table…" Click="CreateTable_Click"/><Button Content="Create index…" Click="CreateIndex_Click"/><Button Content="Modify object" Click="ModifyObject_Click"/><Button Content="Delete object" Click="DropObject_Click"/></WrapPanel>
@@ -145,7 +149,9 @@
      </TabItem>
     </TabControl>
     <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch" Background="#3C3C40"/>
-    <TabControl Grid.Column="2" Margin="8,0,0,0">
+    <Grid Grid.Column="2" Margin="8,0,0,0">
+     <Grid.RowDefinitions><RowDefinition Height="2*"/><RowDefinition Height="5"/><RowDefinition x:Name="ScratchPadRow" Height="*" MinHeight="155"/></Grid.RowDefinitions>
+    <TabControl x:Name="InspectorTabs" IsEnabled="False" ClipToBounds="True">
      <TabItem Header="Edit Cell">
       <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
        <TextBlock x:Name="CellLocation" Text="Select a cell in Browse Data" Foreground="#9C9CA2" TextWrapping="Wrap" Margin="0,0,0,8"/>
@@ -165,7 +171,32 @@
       </DockPanel>
      </TabItem>
     </TabControl>
-    <Expander Grid.Row="1" Grid.ColumnSpan="3" Header="SQL Log" Margin="0,8,0,0">
+     <GridSplitter Grid.Row="1" Height="5" HorizontalAlignment="Stretch" Background="#3C3C40" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext" ToolTip="Resize the scratch pad"/>
+     <Border x:Name="ScratchPadArea" Grid.Row="2" Background="#232326" BorderBrush="#454549" BorderThickness="1" CornerRadius="6" Padding="8" Margin="0,6,0,0">
+      <Expander x:Name="ScratchPadExpander" IsExpanded="True" Expanded="ScratchPadExpansion_Changed" Collapsed="ScratchPadExpansion_Changed">
+       <Expander.Header><TextBlock Text="SCRATCH PAD" Foreground="#E8175D" FontWeight="SemiBold"/></Expander.Header>
+      <Grid Margin="0,6,0,0"><Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+       <TextBox x:Name="ScratchPad" Text="" AcceptsReturn="True" AcceptsTab="True" FontFamily="Consolas"
+                VerticalContentAlignment="Top" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" SelectionBrush="#E8175D"
+                FocusVisualStyle="{x:Null}" ToolTip="Notes only—never executed as SQL or saved in the database. Export to keep them after restarting.">
+        <TextBox.Template><ControlTemplate TargetType="TextBox">
+         <Border x:Name="ScratchTextBorder" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}">
+          <ScrollViewer x:Name="PART_ContentHost"/>
+         </Border>
+         <ControlTemplate.Triggers><Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="ScratchTextBorder" Property="BorderBrush" Value="#E8175D"/></Trigger></ControlTemplate.Triggers>
+        </ControlTemplate></TextBox.Template>
+       </TextBox>
+       <WrapPanel Grid.Row="1" Margin="0,7,0,0">
+        <Button x:Name="ExportScratchPadButton" Content="Export scratch pad" Click="ExportScratchPad_Click" Padding="7,5" FontSize="11" Margin="0,0,5,4"/>
+        <Button x:Name="ImportScratchPadButton" Content="Import scratch pad" Click="ImportScratchPad_Click" Padding="7,5" FontSize="11" Margin="0,0,0,4"/>
+       </WrapPanel>
+       <TextBlock x:Name="ScratchPadStatus" Grid.Row="2" Text="Session notes · resets when the tool restarts." Foreground="#9C9CA2" FontSize="10.5"
+                  TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+      </Grid>
+      </Expander>
+     </Border>
+    </Grid>
+    <Expander x:Name="SqlLogExpander" Grid.Row="1" Grid.ColumnSpan="3" Header="SQL Log" Margin="0,8,0,0" IsEnabled="False">
      <DockPanel Height="125"><Button Content="Clear log" DockPanel.Dock="Right" Click="ClearSqlLog_Click" VerticalAlignment="Top" Margin="8,0,0,0"/><TextBox x:Name="SqlLog" IsReadOnly="True" FontFamily="Consolas" AcceptsReturn="True" VerticalContentAlignment="Top" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/></DockPanel>
     </Expander>
    </Grid>

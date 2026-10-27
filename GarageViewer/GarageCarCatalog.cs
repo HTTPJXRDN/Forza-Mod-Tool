@@ -8,15 +8,17 @@ namespace FH6LocalCryptoTool.GarageViewer;
 
 public sealed record GarageCarDefinition(long Id, string MediaName, long Year, bool RemovalLocked)
 {
+    public bool IsFh2 { get; init; }
+    public string StockConfigurationWarning { get; init; } = "";
     public string Manufacturer { get; init; } = "Unknown manufacturer";
     readonly string _friendlyName = FH6CarEditor.Naming.Friendly(MediaName);
     public string Name => _friendlyName;
-    public long DisplayYear => FH6CarEditor.CarDisplayNames.Year(Id, MediaName, Year);
-    public bool IsInitialDrive => FH6CarEditor.CarDisplayNames.IsInitialDrive(Id, MediaName);
+    public long DisplayYear => IsFh2 ? Year : FH6CarEditor.CarDisplayNames.Year(Id, MediaName, Year);
+    public bool IsInitialDrive => !IsFh2 && FH6CarEditor.CarDisplayNames.IsInitialDrive(Id, MediaName);
     public bool IsTraffic => MediaName.Contains("_Traffic_", StringComparison.OrdinalIgnoreCase);
     // These traffic variants have ambiguous stock side-skirt choices. Retain their
     // definitions for owned-car lookup, but keep them out of both Add pickers.
-    public bool CanAddToGarage => !IsInitialDrive && Id is not (2903 or 4124 or 4125 or 4126 or 4127 or 4129);
+    public bool CanAddToGarage => StockConfigurationWarning.Length == 0 && !IsInitialDrive && (IsFh2 || Id is not (2903 or 4124 or 4125 or 4126 or 4127 or 4129));
     public string DisplayName => $"{DisplayYear} {Name}";
     public override string ToString() => DisplayName;
 }
@@ -29,18 +31,21 @@ public sealed class GarageCarCatalog : IDisposable
     readonly Dictionary<string, HashSet<string>> _columns = new(StringComparer.OrdinalIgnoreCase);
     public IReadOnlyList<GarageCarDefinition> Cars { get; }
     public string Label { get; }
+    public ForzaGame Game { get; }
 
-    GarageCarCatalog(string path, string label)
+    GarageCarCatalog(string path, string label, ForzaGame game = ForzaGame.Horizon6)
     {
-        _path = path; Label = label; _db = Open(path, SqliteOpenMode.ReadOnly);
+        _path = path; Label = label; Game = game; _db = Open(path, SqliteOpenMode.ReadOnly);
         try {
+            if (game == ForzaGame.Horizon2 && GameDbIdentity.Detect(path) != ForzaGame.Horizon2)
+                throw new InvalidDataException("Not a verified FH2 car catalog.");
             foreach (var table in Read("SELECT name FROM sqlite_master WHERE type='table' AND (name IN ('Data_Car','List_CarMake') OR name LIKE 'List_Upgrade%')")) {
                 string name = (string)table["name"];
                 _columns[name] = Read("PRAGMA table_info(" + Q(name) + ")").Select(c => (string)c["name"]).ToHashSet(StringComparer.OrdinalIgnoreCase);
             }
             if (!Has("Data_Car", "Id") || !Has("Data_Car", "MediaName") || !Has("Data_Car", "Year") ||
-                !Has("List_UpgradeCarBody", "IsStock")) throw new InvalidDataException("Choose a complete FH6 GameDB catalog, not a car-only export or profile save.");
-            if (!Has("Data_Car", "NotAvailableInAutoshow"))
+                !Has("List_UpgradeCarBody", "IsStock")) throw new InvalidDataException("Choose a complete matching GameDB catalog, not a car-only export or profile save.");
+            if (game != ForzaGame.Horizon2 && !Has("Data_Car", "NotAvailableInAutoshow"))
                 throw new InvalidDataException("This catalog does not have the supported FH6 schema. Motorsport stock parts must not be added to an FH6 save.");
             if (Read("PRAGMA application_id").Any(r => L(r.Values.First()) == 0x46483643))
                 throw new InvalidDataException("Choose a complete FH6 GameDB, not a sparse car export.");
@@ -64,24 +69,32 @@ public sealed class GarageCarCatalog : IDisposable
             string makeId = Has("Data_Car", "MakeID") ? "MakeID" : "0";
             Cars = Read($"SELECT Id,MediaName,Year,{locked} locked,{makeId} makeId FROM Data_Car {drive}")
                 .Select(c => new GarageCarDefinition(L(c["Id"]), Convert.ToString(c["MediaName"])!, L(c["Year"]), L(c["locked"]) != 0) {
-                    Manufacturer = FH6CarEditor.CarDisplayNames.Manufacturer(L(c["Id"]), Convert.ToString(c["MediaName"])!,
-                        makes.GetValueOrDefault(L(c["makeId"]), "Unknown manufacturer"))
+                    IsFh2 = game == ForzaGame.Horizon2,
+                    Manufacturer = game == ForzaGame.Horizon2 ? makes.GetValueOrDefault(L(c["makeId"]), "Unknown manufacturer") :
+                        FH6CarEditor.CarDisplayNames.Manufacturer(L(c["Id"]), Convert.ToString(c["MediaName"])!, makes.GetValueOrDefault(L(c["makeId"]), "Unknown manufacturer"))
                 })
                 .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase).ThenBy(c => c.Year).ToArray();
+            if (game == ForzaGame.Horizon2)
+                Cars = Cars.Select(c => {
+                    try { _ = StockConfiguration(c.Id); return c; }
+                    catch (InvalidDataException ex) { return c with { StockConfigurationWarning = ex.Message }; }
+                }).ToArray();
         } catch { _db.Dispose(); Cleanup(path); throw; }
     }
 
-    public static GarageCarCatalog Embedded()
+    public static GarageCarCatalog Embedded(ForzaGame game = ForzaGame.Horizon6)
     {
+        if (game is not (ForzaGame.Horizon2 or ForzaGame.Horizon6)) throw new InvalidDataException("Unsupported garage catalog game.");
         string path = NewPath();
         try {
             // Version stamps are opaque IDs, not sortable release numbers. Explicitly
             // designate the newest verified clean FH6 catalog, retaining older baselines.
-            using var input = Assembly.GetExecutingAssembly().GetManifestResourceStream("FH6LocalCryptoTool.gamedbRC.stock.661353983.sqlite.gz")
-                ?? throw new InvalidDataException("The embedded FH6 car catalog is missing.");
+            string resource = game == ForzaGame.Horizon2 ? "FH6LocalCryptoTool.gamedbRC.stock.fh2-2067577858.sqlite.gz" : "FH6LocalCryptoTool.gamedbRC.stock.661353983.sqlite.gz";
+            using var input = Assembly.GetExecutingAssembly().GetManifestResourceStream(resource)
+                ?? throw new InvalidDataException("The embedded car catalog is missing.");
             using var gzip = new GZipStream(input, CompressionMode.Decompress);
             using (var output = new FileStream(path, FileMode.CreateNew)) gzip.CopyTo(output);
-            return new(path, "Embedded FH6 catalog (682 models; build 661353983)");
+            return new(path, game == ForzaGame.Horizon2 ? "Embedded FH2 catalog (354 models)" : "Embedded FH6 catalog (682 models; build 661353983)", game);
         } catch { Cleanup(path); throw; }
     }
 
@@ -120,6 +133,15 @@ public sealed class GarageCarCatalog : IDisposable
         var rows = Read($"SELECT * FROM {Q(table)} WHERE {Q(key)}=$p0 AND IsStock=1 ORDER BY Id", value);
         if (rows.Count > 1) throw new InvalidDataException($"Ambiguous stock parts in {table} for {value}; no car was added.");
         return rows.SingleOrDefault();
+    }
+
+    internal void ValidateFh2GarageSchema(IReadOnlyList<Dictionary<string, object>> actual)
+    {
+        if (Game != ForzaGame.Horizon2) throw new InvalidDataException("Use the FH2 stock reference for FH2 saves.");
+        static string Shape(Dictionary<string, object> r) => string.Join("|", new[] { "name", "type", "notnull", "pk" }.Select(k => Convert.ToString(r[k], CultureInfo.InvariantCulture)));
+        var expected = Read("PRAGMA table_info(NewProfile_Career_Garage)");
+        if (expected.Count == 0 || !expected.Select(Shape).SequenceEqual(actual.Select(Shape), StringComparer.Ordinal))
+            throw new InvalidDataException("This garage differs from the verified FH2 stock schema; adding cars is disabled.");
     }
 
     internal static readonly (string Field, string Table)[] CarParts = {
@@ -163,7 +185,7 @@ public sealed class GarageCarCatalog : IDisposable
         }
         if (!linked.ContainsKey("CarBody") || !linked.ContainsKey("Drivetrain") ||
             !linked.ContainsKey("Engine") && !linked.ContainsKey("Motor"))
-            throw new InvalidDataException("This car has no complete stock body/drivetrain/powertrain configuration in the catalog. Load the matching full GameDB or duplicate an existing garage entry instead.");
+            throw new InvalidDataException("This car has no complete stock body/drivetrain/powertrain configuration in the catalog. Duplicate an existing garage entry instead.");
         long body = L(linked["CarBody"]["CarBodyID"]);
         long drive = L(linked["Drivetrain"]["DrivetrainID"]);
         long engine = linked.TryGetValue("Engine", out var eng) ? L(eng["EngineID"]) : -1;

@@ -1,0 +1,32 @@
+Profile Editor
+
+Close the game and back up the whole save folder. Each tab keeps its own edits.
+
+FH6
+1. Load a copy of C_ProfileData.
+2. Change values in Overview, then Apply. XP shows a level preview.
+3. Export save writes C_ProfileData.edited. Install an encrypted copy as C_ProfileData.
+
+- Playlist: choose one, then Complete playlist. Seasons and history points update; rewards stay unclaimed.
+- Unlocks: search, select items, then Unlock selected. Ctrl+A selects the visible list. Badge dates use UTC.
+- Roads: Discover all roads fills the map.
+- Collection Journal: select rows, then Complete selected challenges. The tickboxes show status.
+- Horizon Promo: Journal completion marks cars photographed; it does not create photo files.
+- Advanced views let you inspect records and run SQL. Only change fields you understand.
+- XP edits do not grant level-up rewards. Online XP persistence is unconfirmed.
+
+FH2/Azimuth
+- FH2 save opens a revision, its data folder or the revisions folder.
+- Apply credits, available skill points, wheelspins or Driver XP. Level/wristband is a preview.
+- Boards: choose a mainland group or Storm Island, then Complete board group.
+- Roads: separate buttons cover Mainland (315) and Storm Island (50).
+- Perks / Promo: unlock all perks or mark owned cars photographed.
+- Speed cameras: reveals locations; scores and completion stay unchanged.
+- Mainland: complete one destination's 28 championships, or all 168 plus the finales and post-story mode.
+- Storm Island: completes 29 championships and 88 races. The final gauntlet and island story are excluded. Visit the island first.
+- Completion buttons do not award XP, credits, spins or reward cars.
+- Close FH2 and Azimuth and back up your User save folder before installing.
+- Copy the exported commit and whole data folder into BOTH folders inside revisions. Replacing only one can stop the edited save loading.
+- Keep both folder names; their revision numbers change.
+
+FH5 saves are decrypt-only in Crypto. Export and reload to move edits between tabs.

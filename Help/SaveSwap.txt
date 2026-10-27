@@ -1,0 +1,15 @@
+Save Swap - FH6 only
+
+Close FH6 and back up the whole save folder. Use copies of both saves.
+
+1. DONOR SAVE: the C_ProfileData with the progress you want.
+2. TARGET SAVE: your own C_ProfileData. Double-check the order.
+3. Build Swapped Save writes a .swapped file beside the target.
+4. Install an encrypted copy of that output as C_ProfileData. Keep your backup.
+
+The donor supplies progress; the target supplies account identity.
+
+Save location:
+C:\XboxGames\GameSave\pgs\u_<account>_<suffix>\current\ContainersRoot\User_<account>\C_ProfileData
+
+FH2, FH5 and FM8 save swapping are not supported.

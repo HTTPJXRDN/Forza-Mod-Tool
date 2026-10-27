@@ -2,14 +2,17 @@
 
 # Detailed usage and technical reference
 
-Forza Mod Tool brings FH6 and FM8 crypto, car, animation, save-swap, profile, garage, and database tools together in one application. Save/profile and Garage Viewer features are FH6-only.
+Forza Mod Tool supports GameDB editing and merging for FH2, FH5, FH6 and Forza Motorsport (FM8). Profile Editor and Garage Viewer support FH6 and FH2/Azimuth saves. Save Swap is FH6-only, and FH5 profile saves are decrypt-only in Crypto.
 
-Download and extract `FH6LocalModTool_v1.2.6.3.zip` from the release assets. See [what changed since 1.2.6.2](../CHANGELOG.md).
+Download and extract `FH6LocalModTool_v1.3.0.zip` from the release assets. See [what changed since 1.2.6.3](../CHANGELOG.md).
 
 ## Table of contents
 
 - [Features](#features)
 - [Requirements](#requirements)
+- [Game support](#game-support)
+- [FH2 / Azimuth](#fh2--azimuth)
+- [FH5](#fh5)
 - [Before you begin](#before-you-begin)
 - [Beginner overview](#start-here-a-beginners-guide)
 - [Required GameDB folder setup](#required-gamedb-folder-setup)
@@ -35,6 +38,8 @@ Download and extract `FH6LocalModTool_v1.2.6.3.zip` from the release assets. See
 
 ## Features
 
+Version **1.3.0** adds FH2/FH5 support, FH2 save editing, mm-per-side track widths and size labels, engine naming, car buckets, expanded stock restore, native thumbnails and a DB Browser scratch pad. Each tab has editable **?** help that can stay open while you use the tool.
+
 - Decrypt and re-encrypt GameDB `.slt` containers.
 - Decrypt, edit, and re-encrypt supported text assets such as INI, XML, JSON, TXT, and extensionless configuration files.
 - Decode unencrypted `.skeld` skeletons to editable JSON and rebuild validated binary copies.
@@ -57,13 +62,67 @@ Download and extract `FH6LocalModTool_v1.2.6.3.zip` from the release assets. See
 - Browse your FH6 garage by manufacturer with friendly car names and actual per-instance cached thumbnails.
 - Add stock cars, duplicate an instance, remove selected cars, and set the current car in a private save working copy.
 - Edit Original Owner, Distance Driven, and Top Speed individually or in batches, changing only the fields you select.
-- Decrypt FH6 `C_ProfileData` to standalone SQLite in Crypto and re-encrypt it using the matching original profile template.
+- Decrypt complete FH5/FH6 profile streams in Crypto; re-encrypt FH6 using the original profile template. FH5 saves support decryption only.
 - Resize garage lists and Car Editor panels, including the engine/motor list.
+- Edit FH2/Azimuth balances, XP, boards, roads, perks, photography and supported championships; manage its garage in the dedicated FH2 view.
+- Use stock thumbnails directly from FH2/FH5/FH6 resource ZIPs, with remembered sources for each game.
+- Edit car buckets and stock engine labels, and restore a selected car's own records while preserving shared parts and engine names.
+- Keep session notes in DB Browser's scratch pad, with TXT import/export.
 - Create renamed output files without overwriting the input files.
 
 ## Requirements
 
 The release executable supports Windows 10/11 x64 and does not require a separate .NET installation. Building from source requires the .NET 8 SDK.
+
+## Game support
+
+| Game | GameDB / Car Editor | Save support |
+|---|---|---|
+| FH2 | Open plain SLT or SQLite; native supported options | Profile Editor and Garage Viewer for Azimuth revision saves |
+| FH5 | SLT decrypt/re-encrypt and direct Car Editor loading | Crypto decryption only |
+| FH6 | SLT decrypt/re-encrypt and direct Car Editor loading | Profile Editor, Garage Viewer and Save Swap |
+| FM8 | Decrypt to SQLite before Car Editor/DB Browser; re-encrypt afterward | No save editing |
+
+The game is detected from the file. Normal merge, Merge updated DB, car export/import and body-kit import support all four games, using same-game inputs. FH2 SLTs stay plain. FH5/FH6/FM8 encrypted exports need the matching original template. Stock comparison, names and restore use a same-game, same-build embedded reference; FM8 has no embedded stock reference.
+
+The **?** button opens a short, non-blocking guide. Edit its `Help/*.txt` file beside the EXE and reopen the guide to reload the text. The app's support and Discord links are beside the version number.
+
+## FH2 / Azimuth
+
+### GameDB editing
+
+Open `Mount\media\stripped\gamedbRC.slt` directly. It is already SQLite. Apply your changes and **Export SLT**; do not encrypt the FH2 output with an FH5/FH6 template. Use your existing Azimuth mod setup to install the plain SLT. With Extra Options, a higher-priority `mediaoverride` or `mediapc` copy can hide changes in the original `media` folder.
+
+Supported options include engines/motors, power, rims, tire widths, wheelbase, buckets, vintage tires and Race/Rally suspension. Custom drift adds an extra Race-tier part. Its optional steering-angle override affects the whole car: uncheck the override and Apply to restore stock steering after reopening. Tire-profile and track-width controls are disabled for FH2; use the separate FH2 wheel mod. See [FH2 Car Editor notes](FH2-CAR-EDITOR.md).
+
+### Profile and garage
+
+1. Back up the whole Azimuth `User_<account>` save folder.
+2. Click **FH2 save…** in Profile Editor or Garage Viewer. Choose a revision, its `data` folder or `revisions` to load the latest revision.
+3. Edit credits, available skill points, wheelspins or Driver XP, then Apply. The level/wristband is a read-only preview; there is no separate level Apply.
+4. Progress buttons cover mainland/Storm Island boards and roads, all perks, owned-car photography, camera discovery and supported championships.
+5. In Garage Viewer, add/duplicate/remove supported cars or edit owner/distance/top speed. Batch Original Owner changes labels only; distance and top speed remain single-car fields.
+6. **Export save** writes a complete revision. Close FH2 and Azimuth and back up the whole `User_<account>` save folder. Copy the same exported `commit` and entire `data` folder into **both folders inside `revisions`**, replacing their contents. Replacing only one can stop the edited save loading. Keep both existing folder names; the revision numbers change as the game saves. Never mix a commit with different blobs.
+
+Typical path:
+
+```text
+<Azimuth>\data\titles\1A96545B\saves\player-1\User_<account>\revisions\<revision>\
+```
+
+Mainland completion covers 168 championships / 672 races. **All mainland + finales** also completes both finales and repairs post-story progression. One-destination completion covers 28 championships without changing the story. Storm Island covers 29 pre-finale championships / 88 races after its introduction; the final gauntlet and island story are excluded. Camera discovery reveals locations without creating scores or completing the cameras. Completion buttons do not grant XP, credits, spins or reward cars.
+
+FH2 saves, roads on both maps, remaining mapped fields and Extra Options compatibility were confirmed in-game. Current/pending and barn-find car protections still apply. This supports Azimuth revision saves, not Xbox 360/STFS containers. See [FH2 save instructions](FH2-SAVES.md).
+
+## FH5
+
+Open the FH5 `gamedbRC.slt` directly in Car Editor, or decrypt it in Crypto first. Edit supported values and export an encrypted SLT. Install it as `MediaPC\stripped\gamedbRC.slt` through your existing FH5 mod setup; leave the original `media\stripped` copy untouched. SQLite-to-SLT export needs the original encrypted FH5 GameDB from the same build.
+
+FH5 uses its own engines, suspension, wheel/tire/track upgrades, buckets, whitewall/vintage tires and Horizon Edition definitions. Track-width inputs and in-game labels use mm per side. Stock names and restore use the matching embedded FH5 reference. Native RC/HiRes thumbnails work directly; choose Auto-find or a folder/ZIP.
+
+Crypto also supports FH5 settings such as PhysicsSettings.ini, supported text assets and audio/other ZIP workspaces. Keep the archive's original and metadata when rebuilding. FH5 profile saves can be decrypted to a complete `.fh5-profile.decrypted` stream in a selected output folder. FH5 profile viewing, editing, re-encryption, Garage Viewer and Save Swap remain disabled.
+
+FH5 editing and exported size labels were confirmed in-game. See [four-game support](FOUR-GAME-DB-SUPPORT.md) for format details.
 
 ## Before you begin
 
@@ -77,18 +136,18 @@ The release executable supports Windows 10/11 x64 and does not require a separat
 
 ## Start here: a beginner's guide
 
-Download and extract `FH6LocalModTool_v1.2.6.3.zip` from the release assets, then run **FH6ModStudio.exe**. Keep `acl_compressor.exe`, `forzatech_acl.dll`, and the included `licenses` folder beside the executable. If building from source, run the resulting `FH6ModStudio.exe` instead.
+Download and extract `FH6LocalModTool_v1.3.0.zip` from the release assets, then run **FH6ModStudio.exe**. Keep the included DLLs, animation helpers, `Help` and `licenses` folders beside the executable. If building from source, run the resulting `FH6ModStudio.exe` instead.
 
 The tool has seven tabs:
 
 | Tab | Use it when you want to... |
 |---|---|
-| **Crypto** | Decrypt/re-encrypt a GameDB, supported asset or FH6 profile; extract/rebuild supported ZIPs; merge database content. |
+| **Crypto** | Decrypt/re-encrypt a GameDB, supported asset or supported profile; extract/rebuild supported ZIPs; merge database content. |
 | **Car Editor** | Change cars, upgrades, prices, fitment, tires, suspension, drivetrains, engines, motors, or handling. |
 | **Animation Swap** | Swap door and experimental CLIPD animation channels or patch animations for database-controlled stance. |
 | **Save Swap** | Move the progress payload from one `C_ProfileData` save into another save's container. |
 | **Profile Editor** | View and edit supported ProfileData values using friendly controls or advanced data views. |
-| **Garage Viewer** | Browse FH6 garage cars, add/remove/duplicate instances, set the current car, or edit owner/history fields. |
+| **Garage Viewer** | Browse FH6 or FH2 garage cars, add/remove/duplicate instances, set the current car, or edit owner/history fields. |
 | **DB Browser** | Browse schema/data, edit cells and records, run SQL, and export a separate database working copy. |
 
 ![Crypto tab overview](../Screenshots/local-crypto-overview.png)
@@ -97,12 +156,14 @@ The tool has seven tabs:
 
 The GameDB can be handled in two ways:
 
-1. Direct workflow: load the encrypted `gamedbRC.slt` in Car Editor and export a new `.slt`.
+1. Direct workflow: load an FH2/FH5/FH6 `gamedbRC.slt` in Car Editor and export a new `.slt`. FH2 stays plain.
 2. SQLite workflow: decrypt to `.sqlite`, edit/export SQLite, then re-encrypt with the original SLT template.
 
-Both workflows use a private temporary SQLite working copy internally. The loaded file is never edited directly.
+Both workflows use a private temporary SQLite working copy internally. The loaded file is never edited directly. FM8 must be decrypted before loading in Car Editor or DB Browser.
 
 ### Required GameDB folder setup
+
+The walkthrough below uses FH6. FH5 uses the same override pattern through its mod setup; FH2 and FM8 installation details are in their game sections.
 
 FH6 includes an original GameDB under `media\stripped`. Do not decrypt, edit, rename, or replace that original. Copy it into `MediaPC\stripped` and perform all GameDB work on the copy in `MediaPC`.
 
@@ -144,7 +205,7 @@ Do not close the game while sitting in a car you are about to change in the data
 1. Close the game.
 2. Open the game's installation folder.
 3. Open `media\stripped` and find the original `gamedbRC.slt`.
-4. Copy, rather than move, that file.
+4. Copy the file.
 5. Open `MediaPC\stripped` and paste the copied `gamedbRC.slt` there.
 6. If `MediaPC\stripped\gamedbRC.slt` already exists, back it up before replacing it.
 7. From this point onward, use only the copy under `MediaPC\stripped`. Leave `media\stripped\gamedbRC.slt` untouched.
@@ -194,13 +255,11 @@ Once this basic workflow succeeds, repeat it with additional edits. Testing a fe
 
 ## Which buttons require Apply?
 
-This distinction is important:
-
 - Checkbox-based fitment, drivetrain, tire, and stance options require **APPLY changes to this car**.
 - Engine, motor, Autoshow, FE-car, global-price, and enhanced-handling buttons change the temporary working database immediately.
 - Both kinds of changes still require **Export SLT** or **Export DB** to create a new file.
 - Direct SLT exports are ready to install after backup and testing; SQLite exports must be re-encrypted first.
-- Garage field edits use **Apply car fields** (or **Apply checked fields** for a batch), then **Export edited save**. Add/Remove/Duplicate/Set as current car change only the garage working copy until export.
+- Garage field edits use **Apply car fields** (or **Apply checked fields** for a batch), then **Export save**. Add/Remove/Duplicate/Set as current car change only the garage working copy until export.
 - DB Browser uses **Write changes** for a working-copy checkpoint, then **Export as** for the output file. Each tab has its own working copy.
 
 If a change does not appear in game, check this chain:
@@ -227,8 +286,10 @@ Choose option → Apply if required → Export SLT → Install the new SLT
 | Merge updated DB | clean update + old modded DB | new `.updatedmerge.<timestamp>.slt` or `.sqlite` |
 | Build save swap | target `C_ProfileData` | `C_ProfileData.swapped` |
 | Edit garage | `C_ProfileData` | `C_ProfileData.garage-edited` |
-| Decrypt profile database | `C_ProfileData` | `C_ProfileData.sqlite` |
-| Re-encrypt profile database | `C_ProfileData.sqlite` + original profile template | `C_ProfileData.re-encrypted` |
+| Decrypt FH6 profile | `C_ProfileData` | `C_ProfileData.decrypted` |
+| Decrypt FH5 profile | encrypted save | `<save>.fh5-profile.decrypted` |
+| Re-encrypt FH6 profile | `C_ProfileData.decrypted` + original profile template | `C_ProfileData.re-encrypted` |
+| Export FH2 save | Azimuth revision | new revision containing `commit` and the complete `data` folder |
 
 The tool does not overwrite the original input during these operations.
 
@@ -236,7 +297,7 @@ The tool does not overwrite the original input during these operations.
 
 Use the **Crypto** tab for encrypted GameDB files, supported text assets, ZIP extraction/rebuilding, FH6 `C_ProfileData`, and database merging. Manual GameDB decrypt/re-encrypt is optional when Car Editor loads an SLT directly.
 
-For GameDB work, always use the copied file at `MediaPC\stripped\gamedbRC.slt`. Keep the original `media\stripped\gamedbRC.slt` untouched.
+For FH5/FH6 GameDB work, use the copied file at `MediaPC\stripped\gamedbRC.slt`. Keep the original `media\stripped\gamedbRC.slt` untouched.
 
 ### Decrypt a GameDB
 
@@ -263,21 +324,20 @@ The original SLT is retained and remembered as the DB template for the current s
 
 Always use the original SLT from the same game build as the SQLite database being rebuilt.
 
-### Decrypt and re-encrypt FH6 C_ProfileData as SQLite
+### Decrypt and re-encrypt profiles
 
-For normal garage changes, use [Garage Viewer](#garage-viewer--garage-editor-fh6); no separate decryption is needed. The SQLite route is for advanced database editing.
+For normal FH6 save changes, load the complete profile directly in Profile Editor or Garage Viewer.
 
-1. Close FH6, back up the **entire save folder**, and copy the original encrypted `C_ProfileData` into a separate working folder.
-2. Drop that copy onto Crypto's main area and click **Decrypt**. The tool extracts its embedded database as `C_ProfileData.sqlite` and remembers the original as a separate **Profile template**.
-3. Open the SQLite in **DB Browser** or another SQLite editor. Make your changes, then **Write changes → Export as SQLite** in DB Browser. Do not export this profile database as a GameDB SLT.
-4. Drop the edited SQLite onto Crypto and click **Re-encrypt**. After restarting the tool, use **Profile template → Browse** to choose the matching original encrypted profile first.
-5. Check the log and keep the new `.re-encrypted` output separate until installation. For an encrypted output, back up the live save and rename the installed copy to exactly `C_ProfileData`.
+1. Copy the encrypted `C_ProfileData` to a separate working folder and keep a backup of the whole save.
+2. Drop the copy onto Crypto and **Decrypt**. The output is `C_ProfileData.decrypted`, containing all four save sections. It does not extract a separate SQLite file.
+3. The original encrypted save becomes the **Profile template**. To re-encrypt a complete `.decrypted` profile, drop it onto Crypto and choose **Re-encrypt**. After a tool restart, select the original under **Profile template → Browse**.
+4. Keep the `.re-encrypted` output separate until installation. With FH6 closed and the whole save backed up, install an encrypted copy as `C_ProfileData`.
 
-The other three save sections are preserved byte-for-byte from the selected template. Profile SQLite is detected by its save-specific schema even if renamed; committed WAL changes are included in the snapshot. Older full-payload `.decrypted` exports remain supported. Profile Editor and Garage Viewer still load complete profile files, not this standalone SQLite. This does not swap account identity or change Save Swap, and FM8 saves are not supported. Manual SQL save edits require careful backups and in-game testing.
+FH5 saves export a complete `.fh5-profile.decrypted` stream to the selected output folder. FH5 viewing, editing, re-encryption and Save Swap are unavailable. Older extracted FH6 profile SQLite files still work with their original profile template; they are not GameDBs. FH2 uses complete Azimuth revision export instead of this profile flow.
 
 ### Decrypt an encrypted text asset
 
-This workflow supports authenticated text containers such as `PhysicsSettings.ini`, XML, JSON, TXT, and extensionless configuration assets.
+This workflow supports authenticated text containers such as `PhysicsSettings.ini`, XML, JSON, TXT, and extensionless configuration assets, including supported FH5 General/File assets.
 
 1. Drag the encrypted asset onto the main drop area.
 2. The tool detects the container structure and selects the General method automatically.
@@ -309,6 +369,8 @@ This conversion keeps the existing bone count and file layout. It does not add o
 
 ### Extract an encrypted ZIP
 
+FH5/FH6 audio ZIPs and supported ordinary ZIPs use the same extract/edit/rebuild pattern. Keep the original ZIP and metadata in the workspace, and do not add or remove entries. FH5 large archives stream to disk. Rebuilding audio does not change its codec or update external zipmanifest.xml files.
+
 1. Drag the `.zip` onto the main drop area.
 2. Format/key detection is automatic; there is no manual Key dropdown.
 3. Click **Decrypt**.
@@ -326,7 +388,7 @@ Supported FH6 ZIP workspaces can also be rebuilt: edit the extracted files, drop
 5. To install it, put the receiving full GameDB in the top area and the exported car donor in the lower merge area.
 6. Click **Import car DB**. Enable **Use donor values for conflicting rows** to replace matching rows. For a fresh replacement of those cars' current mods, tick **Drop & rebuild**, then confirm to write a new output.
 
-The result follows the receiving DB's format: `.slt` in produces an encrypted `.slt`, and SQLite in produces SQLite. Car donors do not carry `VersionInfo`; ordinary merges/imports preserve the receiving DB's version metadata. **Drop & rebuild** removes only the donor cars' related rows, not whole tables, and blocks conflicting shared records used by unselected cars. Normal conflict overrides can affect other cars through shared engine/physics records. The general **Merge** button remains available for manual table and row selection. See the [advanced merge reference](#merge-another-database) for details.
+The result follows the receiving DB's format: encrypted `.slt` stays encrypted, FH2 plain `.slt` stays plain, and SQLite stays SQLite. Car donors do not carry `VersionInfo`; ordinary merges/imports preserve the receiving DB's version metadata. **Drop & rebuild** removes only the donor cars' related rows, not whole tables, and blocks conflicting shared records used by unselected cars. Normal conflict overrides can affect other cars through shared engine/physics records. The general **Merge** button remains available for manual table and row selection. See the [advanced merge reference](#merge-another-database) for details.
 
 ### Merge after a game update
 
@@ -357,9 +419,9 @@ Use this to carry your current mods into a newer GameDB without losing the updat
 
 ![Step 3: back up the old modded GameDB and rename the updated-merge output to gamedbRC.slt](../Screenshots/merge-updated-db-step-3.png)
 
-The photos show example filenames from an earlier app version. Your timestamp and filename prefix may differ; the three-step workflow is the same. For FH6 SLT inputs, the output is already encrypted: no separate decrypt/re-encrypt step is needed.
+The photos show example filenames from an earlier app version; follow the same three-step workflow. For FH6 SLT inputs, the output is already encrypted: no separate decrypt/re-encrypt step is needed.
 
-The app matches your old modded DB's `VersionInfo.database_version` to an embedded clean reference from that same game version. It compares the old clean reference with your modded DB, then applies only your additions, edited fields and deliberate deletions onto the new clean DB. Untouched official updates, new cars and the updated version stamp are retained. This action accepts SLT or SQLite in either area and produces the top file's format.
+The app matches your old modded DB's `VersionInfo.database_version` to an embedded clean reference from that same game version. It compares the old clean reference with your modded DB, then applies only your additions, edited fields and deliberate deletions onto the new clean DB. Untouched official updates, new cars and the updated version stamp are retained. This action accepts same-game FH2/FH5/FH6/FM8 SLT or SQLite inputs and produces the top file's format. Unchanged old tables absent from the new update are skipped and reported; edited missing tables still stop the merge for review.
 
 Older clean references are kept alongside newer references, not replaced. If no unique embedded reference matches, the app asks you to choose the **unmodified full GameDB from the same version as the old modded DB**. A version stamp identifies a build but does not prove a user-supplied reference is clean. Your edits win same-field conflicts; deliberate deletions of old keys win over official edits to those keys. Keyless tables use exact-content differences and duplicate counts, so independently changed official and modded variants can coexist. See the [advanced update-merge reference](#merge-an-updated-game-database-with-your-old-modded-database) and test before installing the output.
 
@@ -376,7 +438,7 @@ The activity log confirms each staged, decrypted, re-encrypted, or extracted fil
 
 ## Section 2: Car Editor
 
-Car Editor accepts an encrypted `.slt` or decrypted `.sqlite`. It works on a temporary SQLite copy and exports a new file; the loaded input stays untouched. An SLT input defaults to SLT output, while a SQLite input defaults to SQLite output.
+Car Editor accepts FH2/FH5/FH6 `.slt` or `.sqlite`; FH2 SLTs are plain. Decrypt FM8 to SQLite before loading it. It works on a temporary SQLite copy and exports a new file; the loaded input stays untouched. An SLT input defaults to SLT output, while a SQLite input defaults to SQLite output.
 
 ![Car Editor before a database is loaded](../Screenshots/car-editor-overview.png)
 
@@ -399,7 +461,7 @@ If you modified several cars, remain in a completely unrelated car until fresh c
 
 1. Open **Car Editor**.
 2. Click **Load SLT / DB** and select the copied `gamedbRC.slt` or a decrypted SQLite database.
-3. If using an SLT, the editor decrypts it into a private temporary SQLite file.
+3. FH5/FH6 SLTs are decrypted into a private working copy; FH2 plain SLTs are copied without encryption.
 4. The editor creates a temporary working copy. The selected file is not edited directly.
 5. Use the search field or type filter to find a vehicle.
 6. Filters include ICE, EV, ICE-to-EV, EV-to-ICE, bodykit presets, and cars modified relative to the embedded stock database. BaseCost and Autoshow availability are intentionally excluded from the Modified cars filter.
@@ -409,7 +471,13 @@ Changes remain in the temporary working database until **Export SLT** or **Expor
 
 The editor carries compressed, versioned stock GameDB references inside the application. It selects the reference matching the loaded database's `VersionInfo.database_version` on every load. This enables **Modified cars only** and **Restore selected car from embedded stock DB** without comparing against the wrong game build. Comparison and restoration are disabled for unknown or ambiguous versions; restoration is also disabled in batch mode and for cars absent from the matched reference.
 
-Version 1.2.6 includes the new **682-model FH6 reference** and retains the older **671-model reference**. Garage Viewer defaults to the new catalog; Car Editor and updated-DB merging select a reference by the database's build stamp, not by the app version or numerical stamp order.
+Version 1.3.0 includes matching FH2 and FH5 stock references alongside the current and historical FH6 references. A reference must match both the game and build; the tool does not fall back to a different game. FM8 has no embedded stock reference.
+
+**Restore selected car from embedded stock DB** restores the selected car's identifiable own records, including fields edited in DB Browser. Added swap links are removed without resetting donor engines. Engine/motor names and records used by other cars are preserved; the log lists shared changes kept. Restore changes the DB, not installed car ZIPs or thumbnail files. It was tested in-game on two replaced car definitions.
+
+**Car bucket** shows the category name and writes the matching ID when you click **Set bucket**. It supports the selected cars and returns to the stock mapping when the car is restored.
+
+**Stock previews:** Auto-find supports FH2/FH5/FH6 installations. FH2 follows Azimuth's configured title folder; manual selection accepts renamed/relocated game, Mount, Content, media or stripped folders. RC ZIPs are read in memory, FH5/FH6 prefer HiRes, and sources are remembered per game. Stock images show the model, not installed paint or parts. FM8 accepts extracted supported images rather than native LZX preview archives.
 
 The selected-car summary shows its powertrain, available engine options, fitment basics, Autoshow state, and stock-restore control:
 
@@ -429,6 +497,7 @@ These controls update the working copy immediately, but the database must still 
 
 ### Engine and motor editing
 
+The engine list contains every engine already in the open database. The tool does not bundle extra cross-game engines or audio packs. **Label stock engines** writes **donor car - engine name** for stock engines with a known donor; generic engines keep their names. Blank stock descriptions use the known donor's name. Labels are shared by EngineID, so existing swaps update too. **Restore stock names** restores the original labels from the matching reference. IDs and physics are unchanged by naming.
 1. Select a car.
 2. Choose **Engines** or **Motors**.
 3. Search or filter the list and select an item.
@@ -480,6 +549,8 @@ The five **+ Add one** rows below the body tabs add one front bumper, rear bumpe
 
 Select an added Widebody tab and click **−** to remove that kit and its body-specific database rows after confirmation. Stock and factory bodykits are protected. The loaded database is unchanged until you export the editor's working copy.
 
+For an **editor-added Widebody**, the front/rear **base track** controls edit its base geometry in absolute metres. They do not use the per-side spacer units below. Stock, factory and shared bodies are protected. Apply and export to keep the change. Added-widebody base tracks were confirmed in-game.
+
 Each widebody tab shows its **upgrade PartId** (`List_UpgradeCarBody.Id`). The line below the tabs also shows its separate `CarBodyID`, car `Ordinal`, and level, so visual modders can coordinate existing database IDs with their car files.
 
 The prefilled **Wheelbase (m)** and **Bottom-center wheelbase Z** boxes edit the active body's `Data_CarBody` values when you click **Apply changes to this car**. `ModelWheelbase` is displayed separately and is not changed by these boxes. Back up the database and test geometry edits in game.
@@ -491,22 +562,26 @@ Available fields:
 - **Rim sizes:** Shared front and rear wheel diameters in inches. These are car-level, not separate per body tab.
 - **Tire widths:** Absolute front and rear tread widths in millimetres.
 - **Tire profile:** Front and rear aspect-ratio offsets. Negative values create a lower profile.
-- **Track width / offset:** Front and rear spacer offsets. Start small, such as `0.03`, `0.05`, or `0.08`.
+- **Track width / offset (FH5/FH6):** millimetres per side. Enter `20` for 20 mm on each side; the DB stores `0.040` metres total. FH2 track width and tire profile stay visible but disabled; use the separate FH2 wheel mod. FM8 direct per-car offsets use mm with their own conversion; their game-side effect remains unconfirmed.
 
-Single-car mode keeps the prefilled absolute boxes and also provides the same repeatable controls as batch mode: rims `−1`/`+1` inch, widths `−10`/`+10` mm, profiles `−2`/`+2`, and track `+0.02 m`. Each click queues another upgrade beyond the current smallest or largest choice; right-click removes the last queued level. Tire-width, profile, and track steps apply only to the active **Stock body** or **Widebody** tab. Relative steps are append-only, preserve existing choices, and skip duplicates.
+Single-car mode keeps the prefilled absolute boxes and also provides the same repeatable controls as batch mode: rims `−1`/`+1` inch, widths `−10`/`+10` mm, profiles `−2`/`+2`, and track `+5 mm` per side by default. **Step (mm)** sets a custom track increment. Each click queues another upgrade beyond the current smallest or largest choice; right-click removes the last queued level. Tire-width, profile, and track steps apply only to the active **Stock body** or **Widebody** tab. Relative steps are append-only, preserve existing choices, and skip duplicates.
+
+To repair older track-width names without adding widths, select one or several cars, check **Track offset**, leave new steps unqueued and Apply. Existing values can be edited after export/reload and applied again. Size labels are shared by axle/size, not per car.
+
+Full DB exports write any needed labels beside the exported DB under `mediapc\stripped\stringtables`. Back up your installed tables, then drag the `stringtables` folder into the game's `MediaPC\stripped`. The tool reads existing game tables and reuses correct labels; unchanged tables are not generated again. Larger sizes add missing labels without losing earlier names. Car-related exports stay DB-only; export the receiving full DB to generate its labels.
 
 **Reset fitment to stock (selected body)** removes non-stock tire-width, tire-profile, and track-offset options from the active body. It does not reset the shared rim-size list.
 
 #### Multi-car batch fitment
 
-Ctrl-click or Shift-click cars in the list to enter batch mode. Batch fitment preserves every stock and existing upgrade row and adds only genuinely new values.
+Ctrl-click or Shift-click cars in the list to enter batch mode. Batch fitment keeps existing stock/upgraded choices and adds new values.
 
 - Rim buttons add `−1` inch below the smallest or `+1` inch above the largest existing choice per click.
 - Front and rear tire-width buttons add `−10` mm below the narrowest or `+10` mm above the widest existing choice per click.
 - Tire-profile buttons add `−2` points below the lowest or `+2` points above the highest existing offset per click.
-- Track-width buttons add `+0.02 m` per click beyond each axle's widest existing option; no smaller-track preset is provided.
+- Track-width buttons add the chosen **Step (mm)** per side beyond each axle's widest existing option. The default is 5 mm; changing it keeps already queued steps.
 - Each button may be clicked repeatedly. Its count shows the number of queued levels, and right-click removes the most recently queued level.
-- Queued values are stored from lowest to highest, including their database row ordering. Track choices advance in exact `0.02 m` steps from one fixed starting point.
+- Queued values are stored from lowest to highest, including their database row ordering. Right-click removes the last queued level.
 - Existing matching values are skipped, and pressing Apply again does not create duplicate upgrade rows. Stock values remain available in game and are not duplicated as upgrade rows, so the editor can show one intentional gap at the stock value.
 
 Batch mode also supports suspension, drivetrain, tires, engine operations, power-builder settings, Autoshow availability, and price actions where shown. Single-car mode remains prefilled for direct absolute editing while also offering the repeatable relative step buttons.
@@ -523,6 +598,8 @@ Check the desired items, then click **APPLY changes to this car**.
 
 ### Tires and stance
 
+Reapply Race/Drift suspension to repair older generated spring/damping ranges. FH2 uses its own Race/Rally definitions and an extra Race-tier drift choice; FH5 uses its native suspension and tire definitions. FH6-specific handling and tire options stay disabled when unsupported.
+
 - **Whitewalls + vintage set** changes the tire brand and replaces the car's tire list with the curated vintage set.
 - **Forza Edition tire set** adds FE tire models and compounds without removing current ordinary tires.
 - If both tire options are checked, the vintage set is created first and FE choices are added afterward.
@@ -538,6 +615,8 @@ Before pressing Apply, review every checkbox in this section. A checked suspensi
 ![Drivetrain, tire, stance, enhanced-handling, and Apply controls](../Screenshots/car-editor-drivetrain-stance-apply.png)
 
 ### Enhanced handling
+
+Power/turbo and handling edits can increase the game's calculated PI, including X999 at extreme values. The tool does not preserve a fixed PI.
 
 1. Select a car.
 2. Click **Apply enhanced handling**.
@@ -607,23 +686,23 @@ CLIPD stores compressed Mojo/ACL animation records, not embedded GR2 files. Blen
 
 ## Section 4: Save Swap
 
+Save Swap supports encrypted FH6 profiles only. FH2, FH5 and FM8 saves are not accepted.
+
 Use Save Swap when you want to put the progress from one FH6 save into another account's save container. The save containing the progress is the **donor**. The save belonging to the account that will use that progress is the **target**.
 
-The tool writes a new verified file beside your copied target. It does not overwrite either input file.
+The tool writes a new file beside the copied target and checks it before reporting success. Both input files stay unchanged.
 
-> **Testing notice:** Save Swap has passed automated cryptographic/round-trip verification and has now been successfully confirmed in game by a user. Account, cloud-sync, and game-build differences still make untouched backups essential.
+> Save Swap has been confirmed in-game. Back up the complete target save folder before installing the result, and check which local/cloud copy the game loads.
 
 ![Save Swap tab showing donor and target inputs](../Screenshots/save-swap-overview.png)
 
 ### Find your C_ProfileData
 
-On the current Xbox Gaming Services save layout, the active profile is normally located at:
+Find your FH6 profile here:
 
 ```text
 C:\XboxGames\GameSave\pgs\u_<your decimal XUID>_<suffix>\current\ContainersRoot\User_<hex account ID>\C_ProfileData
 ```
-
-If Windows stores Xbox game saves on another drive, begin with that drive's `XboxGames\GameSave\pgs` folder instead.
 
 To find it:
 
@@ -687,28 +766,32 @@ The selected donor and target files remain unchanged.
 
 ## Section 5: Profile Editor
 
+The instructions below describe FH6. Use **FH2 save…** for the separate [FH2/Azimuth controls](#fh2--azimuth). FH5 save viewing/editing is disabled; Crypto decryption remains available.
+
 Profile Editor opens an encrypted `C_ProfileData`, validates and decrypts it locally, and presents both everyday controls and advanced data views. Export creates a new encrypted result; the loaded input remains unchanged.
 
 ### Overview
 
 ![Profile Editor Overview with save summary and everyday controls](../Screenshots/profile-editor-overview-v1.1.2.png)
 
-The Overview is designed for everyday players and labels values in plain language when the save exposes a recognized, safely editable layout. Depending on the save, it can include:
+Overview shows the supported values found in your save:
 
 - Credits, XP-derived driver level/prestige, and driver XP.
 - Spendable Skill points, Wheelspins and Super Wheelspins.
-- Current Season Progress points and separate Playlist History points.
+- Online XP with its own level and linked Driver XP previews. Driver XP retention was confirmed after earning XP and restarting; Online XP persistence remains unconfirmed.
+- Current Season Progress points and a Playlist History summary.
 - Playlist reward level, last checkpoint, and claimed-reward count.
-- Horizon Collection and world-progress summaries.
+- **Complete playlist:** select a saved series to complete its seasons and activities and update Playlist History points. Rewards stay unclaimed.
+- Horizon Collection and world-progress summaries; supported totals follow Journal completion.
 - Character items owned, barn-find totals, car-experience unlocks, and festival-site status.
 
-Current Season points use a guarded serializer-layout signature discovered through controlled before/after save comparisons. If a save layout is not recognized, the editor refuses to guess and leaves the value untouched. Editing points does not automatically complete challenges, claim rewards, or rewrite event history.
+Current Season points are editable only when the tool recognizes the save layout. Editing points does not automatically complete challenges, claim rewards, or rewrite event history.
 
 Everyday progression values use plain-language labels and individual Apply buttons:
 
 ![Driver level/prestige, XP preview and spendable balances](../Screenshots/profile-editor-xp-balances-v1.2.6.3.png)
 
-Typing **Driver XP** previews the resulting level/prestige before Apply. The display uses the game's XP curve, not the stale stored level field. Skill points is the actual spendable token balance, not raw skill-score progress; both saved copies update together while preserving Car Mastery unlocks. Spin edits preserve prize history, purchased-spin counts and VIP grants. Skill points and both spin types are confirmed working in-game. XP edits pass private save/UI/export checks but still need an in-game retention check; level-up rewards are not granted.
+Typing **Driver XP** previews the resulting level/prestige before Apply. The display uses the game's XP curve, not the stale stored level field. Skill points is the actual spendable token balance, not raw skill-score progress; both saved copies update together while preserving Car Mastery unlocks. Spin edits preserve prize history, purchased-spin counts and VIP grants. Skill points and both spin types are confirmed working in-game. Driver XP retention was confirmed after earning XP and restarting. Online XP retention is still unconfirmed. XP edits do not grant level-up rewards.
 
 Festival Playlist controls keep Current Season points separate from lifetime Playlist History progress:
 
@@ -720,7 +803,9 @@ Recognized Horizon Collection categories are shown as separate progress values:
 
 ### Roads and inventory unlocks
 
-In **Overview**, open the dropdown below an **Unlock selected** button. Use its search box to filter names, categories or descriptions, select the items you want, then click the button. Ctrl-click selects multiple items; **Ctrl+A in the list** selects only visible eligible items. Filtering clears hidden selections; clearing the search does not reselect them. Press Esc in the search box to clear it. Lists start collapsed with nothing selected. Owned items are labelled; unsupported definitions are read-only. Use **Save edited** to export a separate file.
+Collection Journal Horizon Promo completion also marks the matching cars photographed in the save. It does not create photo images. Supported installed FH6 definitions can provide newer content; changed or unrecognized definitions stay read-only.
+
+In **Overview**, open the dropdown below an **Unlock selected** button. Use its search box to filter names, categories or descriptions, select the items you want, then click the button. Ctrl-click selects multiple items; **Ctrl+A in the list** selects only visible eligible items. Filtering clears hidden selections; clearing the search does not reselect them. Press Esc in the search box to clear it. Lists start collapsed with nothing selected. Owned items are labelled; unsupported definitions are read-only. Use **Export save** to export a separate file.
 
 **Discover all roads** stays a single button. Collection Journal keeps its existing grid and controls.
 
@@ -761,9 +846,9 @@ To repair races from an earlier Journal-only edit, turn off **Unfinished only**,
 
 **Regions:** native sync supports full discovery only. Select the remaining region discovery rows together so all ten Journal entries are complete; already-completed entries count. This adds the verified ten-region set and reveals map fog. Individual region-to-save-ID mapping is not verified, so partial-region edits are refused without changing anything.
 
-**Horizon Stories:** 81 star rows link to 27 chapters. Selecting a chapter's star challenge updates its native completion flag and star count, preserving better stars. Three-save comparison and the chapter UI support completion/stars as the local result. The other chapter field is a last-played date, not a finishing time. No verified local time-PB field was found, so no random times are fabricated; online leaderboards remain untouched. In-game confirmation is still needed.
+**Horizon Stories:** 81 star rows link to 27 chapters. Selecting a chapter's star challenge updates its native completion flag and star count, preserving better stars. Three-save comparison and the chapter UI support completion/stars as the local result. The other chapter field is a last-played date, not a finishing time. The tool does not write chapter times or online leaderboard results. In-game confirmation is still needed.
 
-All of these changes use **Complete selected challenges**; there are no separate world-progress buttons or options. To repair earlier Journal-only edits, turn off **Unfinished only**, select the completed rows and apply them again. The highest supported medal/promotion already earned for those selected activities is respected; Journal dates and points are not awarded again. These new native race/PR/job/world syncs pass private snapshot, boundary and export checks; **in-game validation is still needed**.
+All of these changes use **Complete selected challenges**; there are no separate world-progress buttons or options. To repair earlier Journal-only edits, turn off **Unfinished only**, select the completed rows and apply them again. The highest supported medal/promotion already earned for those selected activities is respected; Journal dates and points are not awarded again. These linked progress updates have passed offline checks; **broader in-game testing is still needed**.
 
 The journal editor covers **2,855 mapped challenges** across Horizon Festival and Discover Japan. Their points stay separate; Festival points control the wristband. It changes local Journal progress and the mapped native race, PR-stunt, job and world fields described above, not actual photos, garage cars, online times or reward-claim history. Discovery stamp/access fields are preserved. Availability can differ from the installed catalog, so only complete entries appropriate to your save.
 
@@ -771,7 +856,7 @@ Saves do not need to store all 2,855 entries. Compatible smaller catalogs show t
 
 ![Collection Journal campaign filter and challenge selection](../Screenshots/profile-editor-journal-v1.2.6.3.png)
 
-The project owner has confirmed journal completion and automatic progression working in-game. Confirmations and errors now use the app's dark/pink theme, with the backup warning retained.
+Journal completion, points and wristband progression have been confirmed in-game. Keep a complete save backup before changing progress.
 
 ### Advanced views
 
@@ -803,7 +888,7 @@ The **Garage Viewer** tab is the garage editor. It works directly with a complet
 1. Close FH6, back up the **entire save folder**, and copy `C_ProfileData` into a separate working folder. See [where to find it](#find-your-c_profiledata).
 2. Open **Garage Viewer → Load C_ProfileData…** and choose the copy. Encrypted and supported decrypted full profiles are accepted; standalone `C_ProfileData.sqlite` belongs in DB Browser, not this tab.
 3. Expand a manufacturer to browse your owned cars. Search by friendly name, manufacturer, year, car ID, or garage instance ID. Cars use the same name formatter as Car Editor.
-4. The stock catalog contains **682 models** by default. Use **Load GameDB catalog…** with your matching full FH6 `.slt` or `.sqlite` for newer/custom models or modified stock-part IDs. A single-car exported donor is not a full catalog; FM8 catalogs/saves are not supported.
+4. The built-in stock catalog loads automatically. The manual GameDB-catalog loader has been removed; no extra catalog load is needed. DLC cars still require the matching installed content/license.
 
 Drag the horizontal divider above the selected-car fields to resize the owned list, or the vertical divider beside the stock catalog to resize its width. Collapse the fields for more list space. The slim dark/pink scrollbars match the other tabs.
 
@@ -817,7 +902,7 @@ Drag the horizontal divider above the selected-car fields to resize the owned li
 - **Set as current car:** select one instance to change the saved current-car reference. This is not a change to the row's general Flags field. Current/pending cars, barn-find VIN references, and catalog removal locks are protected; choose another healthy current car before removing the current instance.
 - **Revert all edits:** restore the snapshot taken when the profile was loaded, including the original current-car selection.
 
-Unknown garage-linked schemas disable editing rather than guessing. Adding cars does **not** grant collection rewards, achievements, or career progress.
+If the current-car reference cannot be resolved but the garage can safely allocate new IDs, adding supported cars can remain available while existing-car edits are disabled. The status message explains restrictions. Adding or duplicating supported non-DLC cars also completes their matching ownership Journal entries and linked progress. DLC ownership Journal entries are excluded, and earned progress is preserved. This does not grant DLC licences, photo images or online results.
 
 ### Original Owner, Distance Driven, and Top Speed
 
@@ -830,22 +915,22 @@ Select an owned car to edit its **Original Owner**, **Distance driven**, and **T
 
 For batch editing, Ctrl/Shift-select owned cars and check **only the fields to replace on every selected car**. Typing checks that field automatically; uncheck it to keep each car's existing value. Mixed values show **Mixed — unchanged**. Click **Apply checked fields**; an invalid value or failed write cancels the whole batch. Checking an empty Original Owner clears the label; empty numeric values are invalid.
 
-Selecting another car or exporting also validates pending field drafts. Invalid input is retained and blocks the action. Applying changes still does not create a save file—use **Export edited save…** afterward.
+Selecting another car or exporting also validates pending field drafts. Invalid input is retained and blocks the action. Applying changes still does not create a save file—use **Export save** afterward.
 
 ### Actual garage thumbnails and larger previews
 
 Previews are matched to each saved car instance's thumbnail reference, so they can show cached paint, designs, and modifications rather than generic stock images. Selecting one car shows a larger preview below the fields, growing with the panel/window. Multi-selection clears that single-car preview. Small and large images preserve the original WebP transparency.
 
-The default cache is `%LOCALAPPDATA%\ForzaHorizon6\LocalStorage_Cache\CacheThumbnails`. **Thumbnail cache folder…** selects another location. The cache is read-only; images are not bundled or inserted into exports. Missing/stale images show a placeholder, and newly added cars may need the game to generate a thumbnail. Windows WebP decoding support is needed for previews only; garage editing works without them.
+The default cache is `%LOCALAPPDATA%\ForzaHorizon6\LocalStorage_Cache\CacheThumbnails`. **Thumbnail cache folder…** selects another location. The cache is read-only; images are not bundled or inserted into exports. Missing, stale or unreadable cached images fall back to stock previews where available; invalid thumbnails no longer interrupt scrolling. Stock fallback images are labelled and do not show saved paint or parts. Auto-find or Stock thumbnails folder chooses the source; newly added cars may need the game to generate an instance thumbnail. Windows WebP decoding support is needed for previews only; garage editing works without them.
 
 ### Export, install, and test
 
 1. Review your selections and apply any field drafts.
-2. Click **Export edited save…** and save to a new filename such as `C_ProfileData.garage-edited`. Export keeps the loaded profile's encrypted/decrypted format; it refuses to overwrite an existing file.
+2. Click **Export save** and save to a new filename such as `C_ProfileData.garage-edited`. Export keeps the loaded profile's encrypted/decrypted format; it refuses to overwrite an existing file.
 3. For an **encrypted** export, keep FH6 closed, back up the live save, and install a copy named exactly `C_ProfileData`. A decrypted full-profile export must be re-encrypted in Crypto with its original profile template before installation.
 4. Check local/cloud synchronization carefully and verify the garage in game. Restore the untouched full backup if the result is not accepted.
 
-Export verifies the rebuilt payload and preservation of non-garage/account sections, except for an explicitly requested current-car reference change. These checks do not establish compatibility for every possible save edit.
+Export verifies the rebuilt payload and preservation of unrelated/account sections. Explicit current-car changes and supported ownership-Journal sync are included when requested. These checks do not establish compatibility for every possible save edit.
 
 ### Recovering a save after SQL Live Editor or GameDB edits
 
@@ -859,7 +944,9 @@ This is a native WPF database workspace inspired by DB Browser for SQLite 3.13.1
 
 ### Main workflow
 
-- Open an FH6 SLT or SQLite database, or start a new empty database. Every session uses an independent private working copy. New Motorsport additions elsewhere in the tool are not changed; unsupported Motorsport SLTs retain the existing bridge restriction.
+The lower-right **Scratch pad** is for notes and IDs. **Import scratch pad** reads TXT and **Export scratch pad** saves TXT. Notes stay while working with databases but clear when the tool closes. They are never executed as SQL.
+
+- Open an FH2/FH5/FH6 SLT or SQLite database, or start a new empty database. Decrypt FM8 GameDBs in Crypto first. Each session uses an independent private working copy.
 - Database Structure lists tables, views, indexes and triggers, their columns and creation SQL. Create tables/indexes through dialogs; modify table names/columns or edit view/index/trigger definitions through SQL. Delete objects with confirmation.
 - Browse Data has a table selector, sortable headers, per-column filters, global text search and page navigation. Column filters accept literal text, `=exact`, numerical `>`, `<`, `>=`, `<=`, and `NULL` / `NOT NULL`.
 - Edit cells directly in the grid with a double-click, F2 or typing. Enter, Tab or clicking away saves the value to the private working copy; Esc cancels the current edit. Existing storage types are preserved; a NULL cell uses the declared column type when filled. Numeric edits accept dot or comma. Invalid values/constraint failures keep the editor open and leave database values intact. Refresh reapplies filters/sorting after edits.
@@ -896,20 +983,20 @@ For example, a rebuilt camera ZIP replaces the original `Content\media\base\came
 - **ZIPs:** extract/rebuild supported camera/car LZX ZIPs, or extract large/deduplicated track ZIPs without rebuilding them.
 
 ### GameDB editing
-Drop supported gamedb.slt into Crypto, Decrypt, edit the resulting FM SQLite in Car Editor or DB Browser, export SQLite, then Re-encrypt in Crypto with the original FM SLT template. The direct SLT Car Editor/DB Browser/merge path remains FH6-specific. FM shared-schema edits are enabled; missing FH6-only options are disabled. Save/profile workflows are FH6-specific.
+Drop supported gamedb.slt into Crypto, Decrypt, edit the resulting FM SQLite in Car Editor or DB Browser, export SQLite, then Re-encrypt in Crypto with the original FM SLT template. Car Editor and DB Browser use decrypted FM8 SQLite; Crypto merge actions can take FM8 SLTs directly. FM shared-schema edits are enabled and unsupported options are disabled. No FM8 profile/garage/save swapping is supported.
 
 ### Install a modified Motorsport GameDB
 
 Motorsport has **no override folder** for this workflow.
 
-1. Close the game and open `Forza Motorsport\Content\media\base\db\`.
+1. Close the game and open `Forza Motorsport\Content\media\base\`.
 2. Rename the original `gamedb.slt` to `gamedb.slt.bak`. If a backup already exists, preserve it and back up the current file under another name; never overwrite the backup.
 3. Copy the new **re-encrypted** modified file into this same folder and name it exactly `gamedb.slt`. Do not install a decrypted SQLite file.
 4. Keep the original backup untouched so it can be restored. A separate backup outside the game folder is recommended.
 
 ### Camera/car ZIP rebuilding and the LZX DLL
 
-FM method-21 LZX operations require a legally obtained **x64 `xcompress64.dll`** beside `FH6ModStudio.exe`. The DLL is not currently included. See [download/setup instructions](../NATIVE_RUNTIME.md); other functions do not require it.
+FH2 save editing/export and FM8 method-21 LZX operations require **[x64 xcompress64.dll](https://github.com/D3FEKT/ForzaTechStudio/blob/Main/ForzaTechStudio/Native/xcompress64.dll)** beside `FH6ModStudio.exe`. Click **Download raw file** on GitHub, put the DLL beside the EXE, then restart the tool. The DLL is not included in the release. See [download/setup instructions](../NATIVE_RUNTIME.md).
 
 1. Drop a supported Motorsport camera/car ZIP onto **Crypto** and click **Decrypt**.
 2. Edit files in the new extracted folder, keeping `forza-zip-roundtrip.json` and `.__original.zip` unchanged.
@@ -935,6 +1022,10 @@ Back up originals and test modified outputs in game. Successful cryptographic or
 Temporary working copies use the normal Windows temporary folder (`%TEMP%`), usually on C:, under `ForzaModTool\Work`. The tool follows your existing Windows configuration.
 
 ## Troubleshooting
+
+Online XP persistence remains unconfirmed. The reported Car Collection display of **4,500 / 4,480** is unresolved; this release does not claim a fix. Extreme power/handling values can raise the game's calculated PI, including X999.
+
+When testing another DB, make sure it includes your current car and every house display car. A smaller DB can leave the save pointing to absent models. Move those cars out of display slots while using the matching DB before trying a reduced test DB.
 
 ### A change does not appear in game
 
@@ -988,9 +1079,9 @@ Save compatibility can still depend on the game build and the data inside each p
 
 ### Merge another database
 
-To share just one edited car, drag the modified `.slt` or `.sqlite` onto Crypto's main drop area. Click **Export Car Related DB**, choose the car, and save a new `.sqlite`. This creates a merge-only donor containing **all related rows for that car**, including its stock body and unchanged rows needed by the importers, its body-specific parts and fitment, car-wide upgrades, and linked engine/motor/physics records. The original DB stays untouched. The donor is not a complete game DB: do not re-encrypt it directly or use **Replace whole table**.
+To share just one edited car, drag the modified `.slt` or `.sqlite` onto Crypto's main drop area. Click **Export Car Related DB**, choose the car, and save a new `.sqlite`. This creates a merge-only donor containing the selected car's related DB rows, including stock body and parts, car-wide upgrades, linked engines/motors and their upgrades, torque curves, tire-friction/affect curves, component makers, make/bucket lookups, media/content registrations and declared foreign-key dependencies. Source values, duplicate rows and thumbnail paths are kept. It exports DB data only; car ZIPs, thumbnails and other files must be shared separately. The original DB stays untouched. The donor is not a complete game DB: do not re-encrypt it directly or use **Replace whole table**.
 
-To install this donor, stage the receiving `.slt` or `.sqlite` in the main drop area, stage the exported one-car `.sqlite` in the merge area, and click **Import car DB**. This is a separate one-click action; it does not open the general table/row picker. It creates a new output in the base format and lets you choose whether donor rows replace conflicts. New rows are added, matching rows are updated only when that option is checked, and base-only rows remain. An export made with an earlier sparse-export build must be exported again to use this action. Linked shared records can affect other cars after merging, so test the result in-game. Deleted rows in the source are not represented by this import.
+To install this donor, stage the receiving `.slt` or `.sqlite` in the main drop area, stage the exported one-car `.sqlite` in the merge area, and click **Import car DB**. This is a separate one-click action; it does not open the general table/row picker. It creates a new output in the base format and lets you choose whether donor rows replace conflicts. New rows are added, matching rows are updated only when that option is checked, and base-only rows remain. An export made with an earlier sparse-export build must be exported again to use this action. Linked shared records can affect other cars after merging, so test the result in-game. Deleted rows in the source are not represented by normal import. **Drop & rebuild** follows the same dependency mapping, replaces the selected cars' private records and protects records shared with other cars. It refuses incomplete older donors that would leave missing dependencies; re-export those cars from the full DB first.
 
 1. Drag a base `.slt` or decrypted `.sqlite` onto the main Crypto drop area.
 2. Drag another modded or updated `.slt` or `.sqlite` onto the smaller merge area. The two inputs may use different formats.
@@ -1013,7 +1104,7 @@ This is a **separate** Crypto action; the general **Merge** picker and **Import 
 
 This is a **three-way comparison**: old clean baseline, old modded DB, new clean update. A baseline key missing from the modded DB is a deliberate deletion and is removed from the output, including engine/motor upgrade rows deleted for ICE/EV conversions. Rows added only by the official update are not mistaken for deletions. For keyed existing rows, only fields differing from the old baseline are copied, preserving official edits to untouched fields. User changes win when both sides edit the same field. A user-edited key removed by the official update is restored from the donor; review such conflicts before using the result. New user-added keys win collisions with update-added keys. The new update's `VersionInfo` stays unchanged.
 
-Tables without keys, including car-part positions, use exact row content and multiplicity rather than trusting row IDs. Their old deleted content is removed and newly added content is copied. If the update independently changed the same keyless row, its new variant may remain alongside the modded variant; review the listed tables. Missing donor tables, incompatible column/key schemas and known sparse car exports block the update merge instead of risking mass deletion. New donor-only tables are supported; dropping an entire baseline table is not applied automatically. Structural/FK checks are safeguards, not a guarantee of in-game compatibility.
+Tables without keys, including car-part positions, use exact row content and multiplicity rather than trusting row IDs. Their old deleted content is removed and newly added content is copied. If the update independently changed the same keyless row, its new variant may remain alongside the modded variant; review the listed tables. Unchanged baseline tables absent from the new update are skipped and reported. Edited missing tables, incompatible column/key schemas and known sparse car exports stop the update merge for review. New donor-only tables are supported; dropping an entire baseline table is not applied automatically. Structural/FK checks are safeguards, not a guarantee of in-game compatibility.
 
 ## Video guide
 

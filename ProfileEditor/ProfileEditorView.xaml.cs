@@ -30,6 +30,7 @@ public partial class ProfileEditorView : UserControl
     SqliteConnection _conn;
     string _loadedName;
     string _currentTable;
+    readonly Fh2SaveHost _fh2Host;
     readonly List<string> _tables = new();
 
     // Typed-property ("profile" section) editing surface.
@@ -49,6 +50,7 @@ public partial class ProfileEditorView : UserControl
     public ProfileEditorView()
     {
         InitializeComponent();
+        _fh2Host = new Fh2SaveHost(this, garage: false);
 #if PROFILE_UNLOCK_TESTING
         _confirmUnlockTest = message => ProfileMessageWindow.Show(this, "Profile unlocks & progression", message, confirmation: true);
 #endif
@@ -77,36 +79,50 @@ public partial class ProfileEditorView : UserControl
     }
 
     // ============================================================ load
-    void Load_Click(object sender, RoutedEventArgs e)
+    async void Load_Click(object sender, RoutedEventArgs e)
     {
         var dlg = new OpenFileDialog
         {
-            Title = "Select a Forza Horizon 6 C_ProfileData save",
-            Filter = "ProfileData (C_ProfileData*)|C_ProfileData*|All files|*.*",
+            Title = "Select an FH6 save or FH2 revision file",
+            Filter = "FH6 / FH2 save files|C_ProfileData*;commit;ProfileData;PlayerDatabase|All files|*.*",
         };
         if (dlg.ShowDialog() != true) return;
-        try { LoadProfile(dlg.FileName); }
+        try { if (Fh2SaveRevision.IsCandidate(dlg.FileName)) await _fh2Host.OpenAsync(dlg.FileName); else LoadProfile(dlg.FileName); }
         catch (Exception ex) { Fail("load", ex); }
     }
 
-    void LoadProfile(string path)
+    async void LoadFh2_Click(object sender, RoutedEventArgs e) => await _fh2Host.ChooseAsync();
+
+    void LoadProfile(string path, bool forceFh5 = false)
     {
-        byte[] bytes = File.ReadAllBytes(path);
+        const string fh5Disabled = "FH5 save viewing is disabled for now. Use Crypto → Decrypt to export the decrypted profile. FH5 save editing and Save Swap are not enabled.";
+        if (forceFh5 || Fh5ProfileCrypto.IsDatabaseExport(path)) throw new NotSupportedException(fh5Disabled);
+        byte[] bytes = Fh5ProfileCrypto.ReadInput(path);
         byte[] stream;
-        if (bytes.Length >= 4 && bytes.AsSpan(0, 4).SequenceEqual(ProfileMarkerLE))
+        bool outerCrypto;
+        bool fh5 = forceFh5 || Fh5ProfileCrypto.HasHeaderAuthentication(bytes.Length, bytes);
+        if (fh5)
+            throw new NotSupportedException(fh5Disabled);
+        else if (bytes.Length >= 4 && bytes.AsSpan(0, 4).SequenceEqual(ProfileMarkerLE))
         {
             stream = bytes;                    // already-decrypted, uncompressed section stream
-            _outerCryptoApplied = false;
+            outerCrypto = false;
         }
         else
         {
             stream = ProfileData.Decrypt(bytes); // encrypted C_ProfileData -> inflated section stream
-            _outerCryptoApplied = true;
+            outerCrypto = true;
         }
 
         var container = ProfileContainer.Parse(stream);
+        if (!outerCrypto && Fh5ProfileCrypto.IsProfileDatabase(container.Database)) throw new NotSupportedException(fh5Disabled);
 
         CloseConnection();
+        _fh5ReadOnly = fh5;
+        _outerCryptoApplied = outerCrypto;
+        _fh5TableOffset = 0;
+        _currentTable = null;
+        RowGrid.ItemsSource = null;
         string dir = Path.Combine(FH6LocalCryptoTool.TempWorkspace.Root, "FH6LocalCryptoTool");
         Directory.CreateDirectory(dir);
         _sqlitePath = Path.Combine(dir, $"profile.{Environment.ProcessId}.{Guid.NewGuid():N}.sqlite");
@@ -122,6 +138,12 @@ public partial class ProfileEditorView : UserControl
         _container = container;
         _loadedName = Path.GetFileName(path);
 #if PROFILE_UNLOCK_TESTING
+        if (!_fh5ReadOnly)
+        {
+            var gameData = ProfileGameData.AttachAutomatically(container);
+            Log(gameData.Message, gameData.Loaded ? "ok" : "info");
+            foreach (string warning in ProfileGameData.Warnings(container)) Log(warning, "info");
+        }
         _unlockTestInputPath = Path.GetFullPath(path);
         _hasUnlockTestEdits = false;
 #endif
@@ -129,7 +151,7 @@ public partial class ProfileEditorView : UserControl
         LoadTableList();
         SummaryText.Text =
             $"{_loadedName}   ·   {_tables.Count} data tables   ·   database {container.Database.Length:n0} bytes   ·   integrity {integrity}   ·   " +
-            (_outerCryptoApplied ? "encrypted save (re-encrypted automatically when you Save)" : "already-decrypted stream");
+            (_fh5ReadOnly ? "FH5 · READ-ONLY · original unchanged · no edited-save export" : _outerCryptoApplied ? "encrypted save (re-encrypted automatically when you Save)" : "already-decrypted stream");
         StatusLine.Text = $"{_loadedName} loaded — {_tables.Count} tables";
         SaveBtn.IsEnabled = true;
         Log($"loaded {_loadedName}: {_tables.Count} tables, database {container.Database.Length:n0} bytes, integrity {integrity}", "ok");
@@ -137,6 +159,7 @@ public partial class ProfileEditorView : UserControl
         BuildProperties();
         BuildSaveState();
         BuildCareer();
+        ApplyFh5ReadOnlyMode();
         BuildOverview();
         ShowOverviewView();   // land on the friendly Overview after a load
     }
@@ -144,7 +167,8 @@ public partial class ProfileEditorView : UserControl
     // ============================================================ sqlite plumbing
     void OpenConnection()
     {
-        _conn = new SqliteConnection($"Data Source={_sqlitePath};Pooling=False");
+        _conn = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = _sqlitePath, Pooling = false,
+            Mode = _fh5ReadOnly ? SqliteOpenMode.ReadOnly : SqliteOpenMode.ReadWrite }.ToString());
         _conn.Open();
     }
 
@@ -189,6 +213,7 @@ public partial class ProfileEditorView : UserControl
     {
         if (TableList.SelectedItem is ListBoxItem item && item.Tag is string name)
         {
+            _fh5TableOffset = 0;
             try { LoadTable(name); } catch (Exception ex) { Fail("open table", ex); }
         }
     }
@@ -199,7 +224,7 @@ public partial class ProfileEditorView : UserControl
         var dt = new DataTable();
         using (var cmd = _conn.CreateCommand())
         {
-            cmd.CommandText = $"SELECT rowid AS __rowid__, * FROM {Quote(table)} LIMIT {RowLimit}";
+            cmd.CommandText = $"SELECT rowid AS __rowid__, * FROM {Quote(table)} ORDER BY rowid LIMIT {RowLimit} OFFSET {(_fh5ReadOnly ? _fh5TableOffset : 0)}";
             using var r = cmd.ExecuteReader();
             for (int i = 0; i < r.FieldCount; i++) dt.Columns.Add(r.GetName(i), typeof(string));
             while (r.Read())
@@ -212,6 +237,10 @@ public partial class ProfileEditorView : UserControl
         long total; using (var c = _conn.CreateCommand()) { c.CommandText = $"SELECT COUNT(*) FROM {Quote(table)}"; total = Convert.ToInt64(c.ExecuteScalar()); }
         RowGrid.ItemsSource = dt.DefaultView;
         GridTitle.Text = $"{table.ToUpperInvariant()}   ·   showing {dt.Rows.Count} of {total:n0}";
+        _fh5TableRows = total;
+        if (_fh5ReadOnly) GridTitle.Text = $"{table} · {(_fh5TableOffset + (dt.Rows.Count > 0 ? 1 : 0)):n0}–{_fh5TableOffset + dt.Rows.Count:n0} / {total:n0}";
+        Fh5PreviousRows.IsEnabled = _fh5ReadOnly && _fh5TableOffset > 0;
+        Fh5NextRows.IsEnabled = _fh5ReadOnly && _fh5TableOffset + dt.Rows.Count < total;
     }
 
     void RowGrid_AutoGenColumn(object sender, DataGridAutoGeneratingColumnEventArgs e)
@@ -221,6 +250,7 @@ public partial class ProfileEditorView : UserControl
 
     void RowGrid_CellEditEnding(object sender, DataGridCellEditEndingEventArgs e)
     {
+        if (_fh5ReadOnly) { e.Cancel = true; return; }
         if (e.EditAction != DataGridEditAction.Commit) return;
         if (_conn == null || _currentTable == null) return;
         if (e.Row.Item is not DataRowView view) return;
@@ -254,6 +284,7 @@ public partial class ProfileEditorView : UserControl
     // ============================================================ SQL runner
     void RunSql_Click(object sender, RoutedEventArgs e)
     {
+        if (_fh5ReadOnly) { Log("FH5 saves are read-only; SQL commands are disabled.", "info"); return; }
         if (_conn == null) { Log("load a profile first", "err"); return; }
         string sql = (SqlBox.Text ?? "").Trim();
         if (sql.Length == 0) { Log("enter a SQL statement", "err"); return; }
@@ -313,7 +344,7 @@ public partial class ProfileEditorView : UserControl
         PropView.Visibility   = ReferenceEquals(view, PropView)   ? Visibility.Visible : Visibility.Collapsed;
         SaveView.Visibility   = ReferenceEquals(view, SaveView)   ? Visibility.Visible : Visibility.Collapsed;
         CareerView.Visibility = ReferenceEquals(view, CareerView) ? Visibility.Visible : Visibility.Collapsed;
-        SqlCard.Visibility    = ReferenceEquals(view, DbBody)     ? Visibility.Visible : Visibility.Collapsed;
+        SqlCard.Visibility    = ReferenceEquals(view, DbBody) && !_fh5ReadOnly ? Visibility.Visible : Visibility.Collapsed;
     }
 
     void ShowOverviewView()
@@ -322,6 +353,7 @@ public partial class ProfileEditorView : UserControl
         SetActiveButton(ViewOverviewBtn);
         ViewHelp.Text = "Overview — the quick way in. A snapshot of your save, plus the values people most often change. "
                       + "For everything else, use the other buttons.";
+        ViewHelp.Text = ViewHelpForMode(ViewHelp.Text);
     }
 
     void ShowDatabaseView()
@@ -330,6 +362,7 @@ public partial class ProfileEditorView : UserControl
         SetActiveButton(ViewDbBtn);
         ViewHelp.Text = "Cars & Data — your cars, garage, barn finds, purchased parts and photos, stored as tables. "
                       + "Pick a table on the left, then double-click any cell to change it.";
+        ViewHelp.Text = ViewHelpForMode(ViewHelp.Text);
     }
 
     void ShowPropertiesView()
@@ -338,6 +371,7 @@ public partial class ProfileEditorView : UserControl
         SetActiveButton(ViewPropBtn);
         ViewHelp.Text = "Profile Values — individual settings and counters saved in your profile. "
                       + "Double-click a value to edit it; the 'Kind' column tells you what sort of value it expects.";
+        ViewHelp.Text = ViewHelpForMode(ViewHelp.Text);
     }
 
     void ShowSaveStateView()
@@ -346,6 +380,7 @@ public partial class ProfileEditorView : UserControl
         SetActiveButton(ViewSaveBtn);
         ViewHelp.Text = "Save State — structured game data stored as an internal XML. "
                       + "You can edit the text values on the left; the panel on the right shows the full structure for reference.";
+        ViewHelp.Text = ViewHelpForMode(ViewHelp.Text);
     }
 
     void ShowCareerView()
@@ -354,6 +389,7 @@ public partial class ProfileEditorView : UserControl
         SetActiveButton(ViewCareerBtn);
         ViewHelp.Text = "Career — low-level career records. These are shown for reference and aren't safe to hand-edit yet, "
                       + "but you can change the Account ID (XUID) this save belongs to.";
+        ViewHelp.Text = ViewHelpForMode(ViewHelp.Text);
     }
 
     // ============================================================ typed properties (section 0)
@@ -374,8 +410,8 @@ public partial class ProfileEditorView : UserControl
 
         foreach (var pair in tree.Walk()) _allProps.Add(pair);
         int editable = _allProps.Count(p => p.Node.IsEditable);
-        PropTitle.Text = $"PROFILE PROPERTIES   ·   {_allProps.Count:n0} nodes, {editable:n0} editable";
-        Log($"typed properties: {_allProps.Count:n0} nodes ({editable:n0} editable)", "ok");
+        PropTitle.Text = _fh5ReadOnly ? $"FH5 PROFILE VALUES · {_allProps.Count:n0} nodes · read-only" : $"PROFILE PROPERTIES   ·   {_allProps.Count:n0} nodes, {editable:n0} editable";
+        Log(_fh5ReadOnly ? $"FH5 typed properties: {_allProps.Count:n0} nodes (read-only)" : $"typed properties: {_allProps.Count:n0} nodes ({editable:n0} editable)", "ok");
         RenderProperties();
     }
 
@@ -449,6 +485,7 @@ public partial class ProfileEditorView : UserControl
 
     void PropGrid_CellEditEnding(object sender, DataGridCellEditEndingEventArgs e)
     {
+        if (_fh5ReadOnly) { e.Cancel = true; return; }
         if (e.EditAction != DataGridEditAction.Commit) return;
         if (e.Column?.Header?.ToString() != "Value") return;
         if (e.Row.Item is not DataRowView view) return;
@@ -545,6 +582,7 @@ public partial class ProfileEditorView : UserControl
 
     void StringGrid_CellEditEnding(object sender, DataGridCellEditEndingEventArgs e)
     {
+        if (_fh5ReadOnly) { e.Cancel = true; return; }
         if (e.EditAction != DataGridEditAction.Commit) return;
         if (e.Column?.Header?.ToString() != "Text") return;
         if (e.Row.Item is not DataRowView view) return;
@@ -685,6 +723,7 @@ public partial class ProfileEditorView : UserControl
 
     void ApplyXuid_Click(object sender, RoutedEventArgs e)
     {
+        if (_fh5ReadOnly) return;
         var bc = _container?.Career;
         if (bc == null || !bc.HasXuid) return;
         string text = (XuidBox.Text ?? "").Trim();
@@ -694,12 +733,16 @@ public partial class ProfileEditorView : UserControl
             return;
         }
         bc.SetXuid(xuid);
-        Log($"account ID set to {xuid} — click Save edited to write it", "ok");
+        Log($"account ID set to {xuid} — click Export save to write it", "ok");
     }
 
     // ============================================================ overview (friendly landing)
     void BuildOverview()
     {
+        if (_fh5ReadOnly) { BuildFh5Overview(); return; }
+#if PROFILE_UNLOCK_TESTING
+        using var catalogScope = ProfileGameData.Use(_container);
+#endif
         OverviewPanel.Children.Clear();
         if (_container == null) return;
 
@@ -712,7 +755,7 @@ public partial class ProfileEditorView : UserControl
                      ("FreeCars", "Free cars"),
                      ("BarnFinds", "Barn finds"),
                      ("Career_PurchasedParts", "Purchased parts"),
-                     ("PhotoCaptures", "Photos"),
+                     ("PhotoCaptures", "Promo cars photographed"),
                  })
         {
             long n = TableCountOrNeg(table);
@@ -722,12 +765,18 @@ public partial class ProfileEditorView : UserControl
             chips.Children.Add(StatChip(_allProps.Count(p => p.Node.IsEditable).ToString("n0", CultureInfo.InvariantCulture), "editable settings"));
         var career = _container.Career;
         OverviewPanel.Children.Add(chips);
+#if PROFILE_UNLOCK_TESTING
+        AddGameDataControls();
+#endif
 
         // ---- Everyday values ----
         OverviewPanel.Children.Add(SectionHeader("Everyday values"));
         int everyday = 0;
         everyday += AddProfileEdit("/Main/Credits", "Credits", "your spendable in-game credits") ? 1 : 0;
         everyday += AddDriverXpControls();
+#if PROFILE_UNLOCK_TESTING
+        everyday += AddOnlineXpControls();
+#endif
         everyday += AddConsumableEdit(ProfileConsumableState.Kind.SkillPoints, "Skill points", "points currently available to spend") ? 1 : 0;
         everyday += AddConsumableEdit(ProfileConsumableState.Kind.Wheelspins, "Wheelspins", "normal spins available; prize history stays unchanged") ? 1 : 0;
         everyday += AddConsumableEdit(ProfileConsumableState.Kind.SuperWheelspins, "Super Wheelspins", "super spins available; VIP grants stay unchanged") ? 1 : 0;
@@ -737,52 +786,10 @@ public partial class ProfileEditorView : UserControl
         // ---- Festival Playlist ----
         OverviewPanel.Children.Add(SectionHeader("Festival Playlist"));
         bool currentPlaylist = AddSeasonPlaylistEdit();
-        bool playlistHistory = AddBxmlIntegerEdit(
-            "CurrencyBucket_CollectionCategoryProgress_cc_festival_playlist", "Total",
-            "Playlist history points",
-            "lifetime Festival Playlist points used by the Playlist History reward track");
-        if (playlistHistory)
-        {
-            var track = FindSaveMapValue("progression_thread_cc_festival_playlist");
-            string level = GetBxmlPropertyValue(track, "Level") ?? "?";
-            string checkpoint = GetBxmlPropertyValue(track, "CurrencyAtLastObjective") ?? "?";
-            int claimed = GetBxmlPropertyNode(track, "ClaimedRewardObjectiveIds")?.Children.Count ?? 0;
-            var playlistChips = new WrapPanel { Margin = new Thickness(0, 8, 0, 0) };
-            playlistChips.Children.Add(StatChip(level, "Playlist reward level"));
-            playlistChips.Children.Add(StatChip(checkpoint, "Last reward checkpoint"));
-            playlistChips.Children.Add(StatChip(claimed.ToString("n0", CultureInfo.InvariantCulture), "Rewards claimed"));
-            OverviewPanel.Children.Add(playlistChips);
-        }
-        if (currentPlaylist || playlistHistory)
-        {
-            OverviewPanel.Children.Add(Note("Current Season points are the score shown on the in-game Season Progress bar. History points are the separate lifetime total. "
-                + "Completed events, reward checkpoints and claimed rewards are preserved and are not changed automatically."));
-        }
-        else
+        if (!currentPlaylist)
         {
             OverviewPanel.Children.Add(Note("No safely recognized Festival Playlist counters were found in this save. Playlist activity data is still preserved."));
         }
-
-        // ---- Horizon Collection ----
-        OverviewPanel.Children.Add(SectionHeader("Horizon Collection progress"));
-        int collectionFields = 0;
-        collectionFields += AddBxmlIntegerEdit("CurrencyBucket_FestivalCollectionCampaignProgress_cc_festival", "Total",
-            "Overall Festival progress", "total progress across the Horizon Collection") ? 1 : 0;
-        collectionFields += AddBxmlIntegerEdit("CurrencyBucket_CollectionCategoryProgress_cc_horizon_legend", "Total",
-            "Horizon Legend progress", "progress in the Horizon Legend collection category") ? 1 : 0;
-        collectionFields += AddBxmlIntegerEdit("CurrencyBucket_CollectionCategoryProgress_cc_car_collection", "Total",
-            "Car Collection progress", "points earned from building your car collection") ? 1 : 0;
-        collectionFields += AddBxmlIntegerEdit("CurrencyBucket_CollectionCategoryProgress_cc_horizon_promo", "Total",
-            "Horizon Promo progress", "points earned by photographing cars") ? 1 : 0;
-        collectionFields += AddBxmlIntegerEdit("CurrencyBucket_CollectionCategoryProgress_cc_drift_attack", "Total",
-            "Drift Attack progress", "points earned through Drift Attack activities") ? 1 : 0;
-        collectionFields += AddBxmlIntegerEdit("CurrencyBucket_DiscoveryCollectionCampaignProgress_cc_discovery", "Total",
-            "Discovery progress", "points earned from exploring the world") ? 1 : 0;
-        if (collectionFields == 0)
-            OverviewPanel.Children.Add(Note("No readable Horizon Collection counters were found in this save."));
-        else
-            OverviewPanel.Children.Add(Note("These totals feed the matching reward tracks. Large jumps may pass several reward checkpoints; "
-                + "claim those rewards normally in-game so the reward history stays consistent."));
 
         // ---- World and unlocks ----
         OverviewPanel.Children.Add(SectionHeader("World and unlocks"));
@@ -847,7 +854,7 @@ public partial class ProfileEditorView : UserControl
         }
 
         OverviewPanel.Children.Add(Note("Advanced users still have the full Profile Values, Save State XML, Career records, and Cars & Data views. "
-            + "Nothing is written to disk until you click Save edited."));
+            + "Nothing is written to disk until you click Export save."));
     }
 
     bool AddProfileEdit(string path, string label, string hint)
@@ -875,7 +882,7 @@ public partial class ProfileEditorView : UserControl
             Content = "Discover all roads",
             Style = (Style)FindResource("PinkButton"),
             IsEnabled = supported,
-            ToolTip = "Discovers all 671 roads on the recognized FH6 map and updates the saved road statistic. Save edited exports your working copy; keep a backup of the entire save.",
+            ToolTip = "Discovers all 671 roads on the recognized FH6 map and updates the saved road statistic. Export save writes your working copy; keep a backup of the entire save.",
         };
         var status = new TextBlock
         {
@@ -894,14 +901,14 @@ public partial class ProfileEditorView : UserControl
         OverviewPanel.Children.Add(row);
         OverviewPanel.Children.Add(Note("Sets RoadsDiscovered to 671. "
             + "Other Discovery progress, rewards and career records are preserved; this does not simulate driving or trigger reward events. "
-            + "Click Save edited to export and keep your full original save backup."));
+            + "Click Export save to write a separate file and keep your full original save backup."));
         button.Click += (sender, args) =>
         {
             try
             {
                 DiscoverAllRoads();
                 if (RoadDiscoverySaveState.TryReadProfile(_container, out _, out uint updatedRoads))
-                    status.Text = $"{updatedRoads:n0} / {RoadDiscoverySaveState.RoadCount:n0} roads — map bitmap filled; Save edited to export";
+                    status.Text = $"{updatedRoads:n0} / {RoadDiscoverySaveState.RoadCount:n0} roads — map bitmap filled; click Export save";
             }
             catch (Exception ex) { Fail("discover all roads", ex); }
         };
@@ -913,8 +920,8 @@ public partial class ProfileEditorView : UserControl
             throw new InvalidDataException("This save's road map and statistic are not safely recognized. Nothing was changed.");
         RenderProperties();
         Log($"road discovery: {before.DiscoveredEntries:n0} → {before.EntryCount:n0} bitmap entries; "
-            + $"RoadsDiscovered {previousRoads:n0} → {RoadDiscoverySaveState.RoadCount:n0}; other progression/rewards unchanged — Save edited to export", "ok");
-        StatusLine.Text = "Road map bitmap and statistic edited in the working copy — Save edited to export";
+            + $"RoadsDiscovered {previousRoads:n0} → {RoadDiscoverySaveState.RoadCount:n0}; other progression/rewards unchanged — click Export save", "ok");
+        StatusLine.Text = "Road map bitmap and statistic edited in the working copy — click Export save";
     }
 
     bool AddBxmlIntegerEdit(string mapKey, string propertyId, string label, string hint)
@@ -940,23 +947,7 @@ public partial class ProfileEditorView : UserControl
 
     bool AddSeasonPlaylistEdit()
     {
-        var career = _container?.Career;
-        var record = career?.Records.FirstOrDefault(item => item.Name == "FestivalPassSaveState");
-        if (career == null || record == null || !CareerSaveStateInsights.TryGetSeasonPoints(record.Payload, out int current))
-            return false;
-
-        OverviewPanel.Children.Add(EditRow("Current Season points", "the score shown on the current Season Progress bar",
-            current.ToString(CultureInfo.InvariantCulture),
-            text =>
-            {
-                if (!int.TryParse(text.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int value) || value < 0)
-                    return (false, "enter a whole number from 0 to 2,147,483,647");
-                if (!CareerSaveStateInsights.TrySetSeasonPoints(record.Payload, value, out byte[] edited))
-                    return (false, "this save's Playlist layout is not safely recognized");
-                career.ReplacePayload(record, edited);
-                return (true, value.ToString(CultureInfo.InvariantCulture));
-            }));
-        return true;
+        return AddPlaylistPointsControls();
     }
 
     Bxml.Node FindSaveMapValue(string mapKey)
@@ -1093,6 +1084,7 @@ public partial class ProfileEditorView : UserControl
     // ============================================================ save
     void Save_Click(object sender, RoutedEventArgs e)
     {
+        if (_fh5ReadOnly) { Log("FH5 save inspection only; edited-save export is disabled.", "info"); return; }
         if (_container == null || _conn == null) { Log("load a profile first", "err"); return; }
         var dlg = new SaveFileDialog
         {
@@ -1107,6 +1099,7 @@ public partial class ProfileEditorView : UserControl
 
     void SaveProfile(string destination)
     {
+        if (_fh5ReadOnly) throw new InvalidOperationException("FH5 saves are read-only. No edited-save export is supported.");
 #if PROFILE_UNLOCK_TESTING
         if (_hasUnlockTestEdits && string.Equals(Path.GetFullPath(destination), _unlockTestInputPath, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Unlock and wristband edits must be exported to a separate file. Keep the original profile and a full save backup unchanged.");

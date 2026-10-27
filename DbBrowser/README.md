@@ -1,10 +1,14 @@
 # DB Browser
 
-This is a native WPF database workspace inspired by DB Browser for SQLite 3.13.1, using the tool's dark/pink theme. It is an independent implementation, not an embedded copy of the Qt application.
+Browse tables, edit records and run SQL using the tool's dark/pink theme. The layout was inspired by DB Browser for SQLite 3.13.1; this is a separate WPF implementation.
+
+## Scratch pad
+
+Use the lower-right scratch pad for notes and IDs. Import/export TXT files with its buttons. Notes clear when the tool closes and are never run as SQL.
 
 ## Main workflow
 
-- Open an FH6 SLT or SQLite database, or start a new empty database. Every session uses an independent private working copy. New Motorsport additions elsewhere in the tool are not changed; unsupported Motorsport SLTs retain the existing bridge restriction.
+- Open an FH2/FH5/FH6 SLT or SQLite database, or start an empty database. Decrypt FM8 GameDBs in Crypto first. Each session keeps its own working copy.
 - Database Structure lists tables, views, indexes and triggers, their columns and creation SQL. Create tables/indexes through dialogs; modify table names/columns or edit view/index/trigger definitions through SQL. Delete objects with confirmation.
 - Browse Data has a table selector, sortable headers, per-column filters, global text search and page navigation. Column filters accept literal text, `=exact`, numerical `>`, `<`, `>=`, `<=`, and `NULL` / `NOT NULL`.
 - Edit cells directly in the grid with a double-click, F2 or typing. Enter, Tab or clicking away saves the value to the private working copy; Esc cancels the current edit. Existing storage types are preserved; a NULL cell uses the declared column type when filled. Numeric edits accept dot or comma. Invalid values/constraint failures keep the editor open and leave database values intact. Refresh reapplies filters/sorting after edits.

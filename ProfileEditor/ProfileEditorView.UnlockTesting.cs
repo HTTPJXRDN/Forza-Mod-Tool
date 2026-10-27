@@ -25,7 +25,7 @@ public partial class ProfileEditorView
     void AddUnlockTestingControls()
     {
         OverviewPanel.Children.Add(SectionHeader("Unlocks & progression"));
-        OverviewPanel.Children.Add(Note("Search and choose items below each button. Ctrl+A in a list selects its visible items. Save edited exports a separate file."));
+        OverviewPanel.Children.Add(Note("Search and choose items below each button. Ctrl+A in a list selects its visible items. Export save writes a separate file."));
         AddClothingUnlockControls();
         AddHornUnlockControls();
         AddEmoteUnlockControls();
@@ -75,19 +75,23 @@ public partial class ProfileEditorView
 
     (bool Success, int Changed) ApplyJournalRewards(JournalRewardKind kind, ulong[] selected)
     {
-        if (!CollectionJournalState.TryUnlockRewards(_container, kind, selected, out var change, out string reason)) throw new InvalidDataException(reason);
+        CaptureJournalDatabase();
+        if (!CollectionJournalState.TryUnlockRewards(_container, kind, selected, out var change, out string reason, CommitJournalDatabase)) throw new InvalidDataException(reason);
+        if (change.Journal.PromoCarsUpdated > 0) { RenderTables(); if (_currentTable == "PhotoCaptures") LoadTable(_currentTable); }
         return (true, change.Changed ? Math.Max(1, change.Added) : 0);
     }
 
     (bool Changed, string Detail) PreviewJournalRewards(JournalRewardKind kind, ulong[] selected)
     {
+        CaptureJournalDatabase();
         if (!CollectionJournalState.TryPreviewUnlockRewards(_container, kind, selected, out var change, out string reason)) throw new InvalidDataException(reason);
         var j = change.Journal;
         return (change.Changed, change.LinkedRewards == 0 ? "" :
             $"\n\nJournal requirements: {change.Requirements}.\n{j.SelectedCompleted:n0} challenges and {j.AutomaticCompleted:n0} automatic bonuses will complete. " +
             $"Native updates: {j.RacesUpdated} races, {j.PrStuntsUpdated} PR stunts, {j.StoriesUpdated} Story chapters, {j.BoardsUpdated} boards, {j.MascotsUpdated} mascots and {j.LandmarksUpdated} landmarks. " +
+            (j.PromoCarsUpdated > 0 ? $"In-game Promo photo progress updates for {j.PromoCarsUpdated} car(s). " : "") +
             (j.JobLevel > 0 ? $"Food Delivery level {j.JobLevel}. " : "") + (j.RegionsUpdated ? "Regions discovered. " : "") +
-            "Points and wristbands update automatically. This edits local progress only: no online records, photos, cars, purchases or reward claims are created. " +
+            "Points and wristbands update automatically, including in-game photo progress for linked Promo entries. Car ownership, saved pictures, online records and reward claims stay unchanged. " +
             "Mapped PR PBs use the required star cutoff + 0–2%; better PBs are preserved. Stories use completion and stars, not invented times.");
     }
 
@@ -170,6 +174,7 @@ public partial class ProfileEditorView
         }
         void Refresh()
         {
+            using var catalogScope = ProfileGameData.Use(_container);
             rows = read();
             toggle.IsEnabled = list.IsEnabled = search.IsEnabled = rows != null;
             status.Text = rows == null ? "This inventory layout is not safely recognized; unlocking is disabled."
@@ -185,6 +190,7 @@ public partial class ProfileEditorView
         list.InputBindings.Add(new KeyBinding(ApplicationCommands.SelectAll, Key.A, ModifierKeys.Control));
         button.Click += (_, _) =>
         {
+            using var catalogScope = ProfileGameData.Use(_container);
             try
             {
                 var chosen = list.SelectedItems.OfType<UnlockItem>().Where(i => i.Selectable).Select(i => i.Id).ToHashSet();
@@ -198,7 +204,7 @@ public partial class ProfileEditorView
                 if (pending == 0 && !linked.Changed) { Log("Selected " + title + " are already unlocked; nothing changed.", "info"); return; }
                 string details = (preview?.Invoke(selection) ?? "") + linked.Detail;
                 if (!_confirmUnlockTest("Unlock " + pending + " selected " + title + "? " + preservation
-                    + " Account/DLC licenses and reward claims are unchanged. Save edited exports separately." + details)) return;
+                    + " Account/DLC licenses and reward claims are unchanged. Export save writes a separate file." + details)) return;
                 var result = apply(selection);
                 if (!result.Success) throw new InvalidDataException("The selected items are not safely supported. Nothing was changed.");
                 _hasUnlockTestEdits |= result.Changed > 0;
@@ -215,8 +221,8 @@ public partial class ProfileEditorView
     void RefreshUnlockTestDisplays(string message)
     {
         BuildCareer();
-        Log(message + " — Save edited to export a separate file", "ok");
-        StatusLine.Text = "Unlock changes applied to the working copy — Save edited to export separately";
+        Log(message + " — click Export save to write a separate file", "ok");
+        StatusLine.Text = "Unlock changes applied to the working copy — click Export save";
     }
 }
 #endif

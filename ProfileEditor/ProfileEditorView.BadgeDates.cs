@@ -63,6 +63,7 @@ public partial class ProfileEditorView
                 }
                 void ShowSelection()
                 {
+                    using var catalogScope = ProfileGameData.Use(_container);
                     var selected = Selected(); dateInput.Text = "";
                     if (selected.Length == 1)
                     {
@@ -82,13 +83,14 @@ public partial class ProfileEditorView
                 dateInput.TextChanged += (_, _) => EnableDateAction();
                 setDate.Click += (_, _) =>
                 {
+                    using var catalogScope = ProfileGameData.Use(_container);
                     try
                     {
                         var selected = Selected(); var requested = RequestedDate();
                         if (requested is null || selected.Length == 0 || selected.Any(b => !b.Unlocked || !b.Supported)) return;
                         foreach (var badge in selected)
                             if (!BadgeEarnedDates.TryChoose(badge.Id, requested, DateTimeOffset.UtcNow, out _, out string error)) throw new InvalidDataException(error);
-                        if (!_confirmUnlockTest($"Set the earned date of {selected.Length} selected unlocked badges to {requested:yyyy-MM-dd HH:mm:ss.ffffff} UTC? Only their dates change. Save edited exports separately.")) return;
+                        if (!_confirmUnlockTest($"Set the earned date of {selected.Length} selected unlocked badges to {requested:yyyy-MM-dd HH:mm:ss.ffffff} UTC? Only their dates change. Export save writes a separate file.")) return;
                         if (!BadgeUnlockState.TrySetEarnedDate(_container, selected.Select(b => (ulong)b.Id), requested.Value, out int changed, out string failure)) throw new InvalidDataException(failure);
                         _hasUnlockTestEdits |= changed > 0; refresh();
                         RefreshUnlockTestDisplays($"Badges: {changed} earned dates updated");

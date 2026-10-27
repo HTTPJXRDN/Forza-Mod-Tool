@@ -1,0 +1,172 @@
+<Window x:Class="FH6LocalCryptoTool.Help.TabHelpWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        Title="Tab help" Width="720" Height="560" MinWidth="420" MinHeight="300"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+        WindowStyle="None" ResizeMode="CanResize" StateChanged="Window_StateChanged"
+        Background="#FF1D1D1F" Foreground="#FFF4F4F6" UseLayoutRounding="True">
+  <Window.Resources>
+    <SolidColorBrush x:Key="HelpPink" Color="#FFE8175D"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#FFE8175D"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#FFF4F4F6"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#FF632339"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="#FFF4F4F6"/>
+    <Style x:Key="HelpCaptionButton" TargetType="Button">
+      <Setter Property="Foreground" Value="#FF9C9CA2"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Width" Value="46"/>
+      <Setter Property="Height" Value="34"/>
+      <Setter Property="FontFamily" Value="Segoe MDL2 Assets"/>
+      <Setter Property="FontSize" Value="10"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+      <Setter Property="shell:WindowChrome.IsHitTestVisibleInChrome" Value="True"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="CaptionBackground" Background="{TemplateBinding Background}">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                TextElement.Foreground="{TemplateBinding Foreground}"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="CaptionBackground" Property="Background" Value="#FF34343A"/>
+                <Setter Property="Foreground" Value="#FFF4F4F6"/>
+              </Trigger>
+              <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter TargetName="CaptionBackground" Property="Background" Value="#FF34343A"/>
+                <Setter Property="Foreground" Value="{StaticResource HelpPink}"/>
+              </Trigger>
+              <Trigger Property="IsPressed" Value="True">
+                <Setter TargetName="CaptionBackground" Property="Background" Value="#FF2A2A2E"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="HelpCaptionCloseButton" TargetType="Button" BasedOn="{StaticResource HelpCaptionButton}">
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="CaptionCloseBackground" Background="{TemplateBinding Background}">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                TextElement.Foreground="{TemplateBinding Foreground}"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="CaptionCloseBackground" Property="Background" Value="{StaticResource HelpPink}"/>
+                <Setter Property="Foreground" Value="White"/>
+              </Trigger>
+              <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter TargetName="CaptionCloseBackground" Property="Background" Value="{StaticResource HelpPink}"/>
+                <Setter Property="Foreground" Value="White"/>
+              </Trigger>
+              <Trigger Property="IsPressed" Value="True">
+                <Setter TargetName="CaptionCloseBackground" Property="Background" Value="#FFC9124E"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="HelpCloseButton" TargetType="Button">
+      <Setter Property="Foreground" Value="#FFF4F4F6"/>
+      <Setter Property="Background" Value="#FF333337"/>
+      <Setter Property="BorderBrush" Value="{StaticResource HelpPink}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Padding" Value="18,6"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="CloseBackground" Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                    CornerRadius="6" Padding="{TemplateBinding Padding}">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="CloseBackground" Property="Background" Value="#FF632339"/>
+              </Trigger>
+              <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter TargetName="CloseBackground" Property="Background" Value="#FF632339"/>
+                <Setter TargetName="CloseBackground" Property="BorderBrush" Value="#FFFF4A84"/>
+              </Trigger>
+              <Trigger Property="IsPressed" Value="True">
+                <Setter TargetName="CloseBackground" Property="Background" Value="#FFC9124E"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="HelpTextBox" TargetType="TextBox">
+      <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+      <Setter Property="SelectionBrush" Value="{StaticResource HelpPink}"/>
+      <Setter Property="SelectionTextBrush" Value="#FFF4F4F6"/>
+      <Setter Property="SelectionOpacity" Value="0.65"/>
+      <Setter Property="IsInactiveSelectionHighlightEnabled" Value="True"/>
+      <Setter Property="CaretBrush" Value="{StaticResource HelpPink}"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="TextBox">
+            <Border x:Name="TextBorder" Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                    CornerRadius="6">
+              <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                <Setter TargetName="TextBorder" Property="BorderBrush" Value="{StaticResource HelpPink}"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+  </Window.Resources>
+  <shell:WindowChrome.WindowChrome>
+    <shell:WindowChrome CaptionHeight="34" ResizeBorderThickness="6" CornerRadius="0"
+                        GlassFrameThickness="0" UseAeroCaptionButtons="False"/>
+  </shell:WindowChrome.WindowChrome>
+  <Border x:Name="HelpRootBorder" Background="#FF1D1D1F" BorderBrush="#FF3C3C40" BorderThickness="1">
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="34"/>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
+      <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+    <Border x:Name="HelpCaptionBar" Background="#FF161618">
+      <Grid>
+        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+        <TextBlock Text="{Binding Title, RelativeSource={RelativeSource AncestorType=Window}}"
+                   Foreground="#FF9C9CA2" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"
+                   Margin="16,0,8,0" TextTrimming="CharacterEllipsis"/>
+        <StackPanel Grid.Column="1" Orientation="Horizontal">
+          <Button x:Name="HelpMinimizeButton" Style="{StaticResource HelpCaptionButton}" Content="&#xE921;"
+                  ToolTip="Minimize" AutomationProperties.Name="Minimize help" Click="Minimize_Click"/>
+          <Button x:Name="HelpMaximizeButton" Style="{StaticResource HelpCaptionButton}" Content="&#xE922;"
+                  ToolTip="Maximize" AutomationProperties.Name="Maximize help" Click="Maximize_Click"/>
+          <Button x:Name="HelpCaptionClose" Style="{StaticResource HelpCaptionCloseButton}" Content="&#xE8BB;"
+                  ToolTip="Close" AutomationProperties.Name="Close help" Click="Close_Click"/>
+        </StackPanel>
+      </Grid>
+    </Border>
+    <Border Grid.Row="1" Padding="20,14" Background="#FF303034" BorderBrush="#FFE8175D" BorderThickness="0,0,0,2">
+      <TextBlock x:Name="HelpTitle" FontSize="22" FontWeight="Bold" Foreground="#FFE8175D"/>
+    </Border>
+    <TextBox x:Name="HelpText" Grid.Row="2" Margin="20,16,20,12" IsReadOnly="True" Style="{StaticResource HelpTextBox}"
+             TextWrapping="Wrap" AcceptsReturn="True" VerticalScrollBarVisibility="Auto"
+             HorizontalScrollBarVisibility="Disabled" Background="#FF232326" Foreground="#FFF4F4F6"
+             BorderBrush="#FF3C3C40" BorderThickness="1" Padding="12" FontFamily="Segoe UI" FontSize="13"
+             TextBlock.LineHeight="20"/>
+    <Button x:Name="HelpClose" Grid.Row="3" HorizontalAlignment="Right" Margin="20,0,20,16"
+            Content="Close" IsCancel="True" Click="Close_Click" Style="{StaticResource HelpCloseButton}"/>
+  </Grid>
+  </Border>
+</Window>

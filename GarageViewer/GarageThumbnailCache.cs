@@ -49,9 +49,25 @@ public sealed class GarageThumbnailCache : IDisposable
         }
     }
     static byte[] ReadBounded(string path, int limit) {
+        if (!TryReadBounded(path, limit, out var bytes))
+            throw new InvalidDataException("Thumbnail input is empty, incomplete or exceeds safe size limits.");
+        return bytes;
+    }
+    static bool TryReadBounded(string path, int limit, out byte[] bytes) {
+        bytes = Array.Empty<byte>();
         using var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-        if (input.Length <= 0 || input.Length > limit) throw new InvalidDataException("Thumbnail input exceeds safe size limits.");
-        byte[] bytes = new byte[checked((int)input.Length)];input.ReadExactly(bytes);return bytes;
+        long length = input.Length;
+        if (length <= 0 || length > limit) return false;
+        var data = new byte[checked((int)length)];
+        int offset = 0;
+        while (offset < data.Length) {
+            int read = input.Read(data, offset, data.Length - offset);
+            if (read == 0) return false;
+            offset += read;
+        }
+        if (input.Length != length) return false;
+        bytes = data;
+        return true;
     }
     public Task<GarageThumbnailResult> GetAsync(string? reference) => GetAsync(reference, false);
     public Task<GarageThumbnailResult> GetPreviewAsync(string? reference) => GetAsync(reference, true);
@@ -81,39 +97,47 @@ public sealed class GarageThumbnailCache : IDisposable
         bool acquired = false;
         try {
             await _gate.WaitAsync(_stop.Token).ConfigureAwait(false);acquired = true;
-            return await Task.Run(() => {
-                _stop.Token.ThrowIfCancellationRequested();
-                byte[] bytes = ReadBounded(file, MaxImageBytes);
-                if (bytes.Length < 16 || !bytes.AsSpan(0,4).SequenceEqual("RIFF"u8) || !bytes.AsSpan(8,4).SequenceEqual("WEBP"u8) ||
-                    BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(4,4)) != bytes.Length - 8)
-                    throw new InvalidDataException("Invalid cached WebP image.");
-                using var input = new MemoryStream(bytes);
-                var decoder = BitmapDecoder.Create(input, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
-                if (decoder.Frames.Count != 1) throw new InvalidDataException("Unexpected thumbnail frame layout.");
-                var frame = decoder.Frames[0];
-                if (frame.PixelWidth is < 1 or > 4096 || frame.PixelHeight is < 1 or > 4096 || (long)frame.PixelWidth * frame.PixelHeight > 8_000_000)
-                    throw new InvalidDataException("Thumbnail dimensions exceed safe limits.");
-                double scale = Math.Min(1, Math.Min((double)maxWidth / frame.PixelWidth, (double)maxHeight / frame.PixelHeight));
-                // BitmapImage's native-size WebP path can choose opaque Bgr32,
-                // discarding the source alpha. Convert the decoder frame explicitly
-                // before scaling: keep car paint, glass and soft shadows intact.
-                BitmapSource source = new FormatConvertedBitmap(frame, PixelFormats.Pbgra32, null, 0);
-                if (scale < 1) source = new TransformedBitmap(source, new ScaleTransform(scale, scale));
-                int stride = checked(source.PixelWidth * 4);
-                byte[] pixels = new byte[checked(stride * source.PixelHeight)];
-                source.CopyPixels(pixels, stride, 0);
-                // A detached scaled snapshot avoids keeping full decoder images
-                // alive on every small list row and never changes the cache file.
-                var image = BitmapSource.Create(source.PixelWidth, source.PixelHeight, 96, 96, PixelFormats.Pbgra32, null, pixels, stride);
-                image.Freeze();
-                return new GarageThumbnailResult(image, "Cached garage preview");
-            }, _stop.Token).ConfigureAwait(false);
+            return await Task.Run(() => LoadImage(file, maxWidth, maxHeight), _stop.Token).ConfigureAwait(false);
+        } catch (OperationCanceledException) { return new(null, "Preview unavailable"); }
+        finally { if (acquired) _gate.Release(); }
+    }
+    GarageThumbnailResult LoadImage(string file, int maxWidth, int maxHeight)
+    {
+        // Empty/incomplete cache files can be normal game placeholders. Treat
+        // expected validation failures as misses, without throwing while scrolling.
+        // Handle decoder/file exceptions on this worker, before crossing Task.Run.
+        try {
+            _stop.Token.ThrowIfCancellationRequested();
+            if (!TryReadBounded(file, MaxImageBytes, out var bytes))
+                return new(null, "Preview unavailable");
+            if (bytes.Length < 16 || !bytes.AsSpan(0,4).SequenceEqual("RIFF"u8) || !bytes.AsSpan(8,4).SequenceEqual("WEBP"u8) ||
+                BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(4,4)) != bytes.Length - 8)
+                return new(null, "Preview unavailable");
+            using var input = new MemoryStream(bytes);
+            var decoder = BitmapDecoder.Create(input, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
+            if (decoder.Frames.Count != 1) return new(null, "Preview unavailable");
+            var frame = decoder.Frames[0];
+            if (frame.PixelWidth is < 1 or > 4096 || frame.PixelHeight is < 1 or > 4096 || (long)frame.PixelWidth * frame.PixelHeight > 8_000_000)
+                return new(null, "Preview unavailable");
+            double scale = Math.Min(1, Math.Min((double)maxWidth / frame.PixelWidth, (double)maxHeight / frame.PixelHeight));
+            // BitmapImage's native-size WebP path can choose opaque Bgr32,
+            // discarding the source alpha. Convert the decoder frame explicitly
+            // before scaling: keep car paint, glass and soft shadows intact.
+            BitmapSource source = new FormatConvertedBitmap(frame, PixelFormats.Pbgra32, null, 0);
+            if (scale < 1) source = new TransformedBitmap(source, new ScaleTransform(scale, scale));
+            int stride = checked(source.PixelWidth * 4);
+            byte[] pixels = new byte[checked(stride * source.PixelHeight)];
+            source.CopyPixels(pixels, stride, 0);
+            // A detached scaled snapshot avoids keeping full decoder images
+            // alive on every small list row and never changes the cache file.
+            var image = BitmapSource.Create(source.PixelWidth, source.PixelHeight, 96, 96, PixelFormats.Pbgra32, null, pixels, stride);
+            image.Freeze();
+            return new GarageThumbnailResult(image, "Cached garage preview");
         } catch (OperationCanceledException) { return new(null, "Preview unavailable"); }
         catch (FileNotFoundException) { return new(null, "Not cached"); }
         catch (DirectoryNotFoundException) { return new(null, "Not cached"); }
         catch (NotSupportedException) { return new(null, "Windows WebP decoder unavailable"); }
         catch (Exception ex) when (ex is IOException or SystemException) { return new(null, "Preview unavailable"); }
-        finally { if (acquired) _gate.Release(); }
     }
     public void Dispose() { _stop.Cancel();lock (_sync) { _images.Clear();_previews.Clear();_order.Clear(); } }
 }

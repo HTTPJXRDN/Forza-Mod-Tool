@@ -1,0 +1,28 @@
+Crypto
+
+Back up your files. Close the game before installing changes.
+
+1. Drop a file into the top box.
+2. Choose Decrypt or Re-encrypt. Use the matching original file if a template is requested.
+3. The log shows the output path. Output folder lets you choose another location.
+
+File types
+- GameDB: FH5, FH6 and FM8 SLTs can be decrypted to SQLite and rebuilt. FH2 SLTs are already plain.
+- Settings: supported INI, XML, JSON and text files can be decrypted and rebuilt.
+- ZIPs, including audio: Decrypt extracts them. Keep the original ZIP and metadata in that folder. Drop the folder back to rebuild it; do not add or remove files. External manifests are not updated.
+- SKELD: decode to JSON, edit, then rebuild.
+- Saves: Decrypt writes the complete .decrypted profile. FH6 can be re-encrypted with its original save template. FH5 is decrypt-only.
+
+Merging
+- Put the receiving DB on top and the donor below, then Merge. Review conflicts before saving.
+- For Merge updated DB, put the NEW clean DB on top and OLD modded DB below. Choose the old version's clean DB if asked.
+- Both DBs must be from the same game.
+
+Sharing cars
+- Export Car Related DB saves the selected cars and their related DB records.
+- Import car DB takes the receiving full DB on top and the exported car DB below.
+- Drop & rebuild resets those cars from the donor. Shared conflicts stop the import.
+- Car exports contain DB data only. Share car ZIPs and other files separately.
+- Before loading a different DB, make sure it includes your current car and house display cars.
+
+Install FH5/FH6 encrypted GameDBs in MediaPC\stripped. Leave the clean media\stripped copy untouched.

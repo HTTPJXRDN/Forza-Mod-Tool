@@ -12,13 +12,14 @@ public sealed record GarageEntry(long Id, long CarId, string Guid, bool Favorite
     public bool IsProtected => Protection.Length != 0;
 }
 
-/// <summary>Garage-only edits on a private SQLite copy. Account/progress sections remain byte-exact.</summary>
+/// <summary>Private garage edits with validated, model-specific Car Collection Journal completion.</summary>
 public sealed class GarageProfileSession : IDisposable
 {
     readonly string _work;
     readonly SqliteConnection _db;
     readonly byte[] _original, _stream;
     readonly ProfileContainer _profile;
+    ProfileContainer _progress;
     readonly bool _encrypted;
     readonly HashSet<long> _protected = new();
     readonly HashSet<long> _pending = new();
@@ -27,12 +28,19 @@ public sealed class GarageProfileSession : IDisposable
     readonly HashSet<string> _tables;
     readonly bool _carDetailsLayout;
     long _nextId;
+    readonly long _originalNextId;
     long _originalCurrentId;
     public string SourcePath { get; }
     public string SourceHash { get; }
     public bool HasChanges { get; private set; }
-    public string EditRestriction { get; private set; } = "";
+    public string JournalSyncSummary { get; private set; } = "";
+    string _layoutRestriction = "", _currentCarRestriction = "";
+    public string EditRestriction => _layoutRestriction.Length != 0 ? _layoutRestriction
+        : _currentCarRestriction.Length == 0 ? "" : _currentCarRestriction + (CanAddCars ? " Stock-car additions are available." : "");
     public bool CanEdit => EditRestriction.Length == 0;
+    public string AddRestriction => _layoutRestriction.Length != 0 ? _layoutRestriction
+        : _nextId > int.MaxValue ? "Garage entry ID range exhausted." : "";
+    public bool CanAddCars => AddRestriction.Length == 0;
     public bool CanEditCarDetails => CanEdit && _carDetailsLayout;
     public long CurrentGarageId { get; private set; }
     public bool CanChangeCurrentCar => CanEdit && _profile.Properties?.Walk().Any(p => p.Path == "/Main/CareerCar" && p.Node.RawValue.Length == 4 && p.Node.TypeId is 3 or 7 or 17) == true;
@@ -45,6 +53,10 @@ public sealed class GarageProfileSession : IDisposable
         _encrypted = _original.Length < 4 || !_original.AsSpan(0,4).SequenceEqual(new byte[]{0xB6,0xF2,0x8B,0x4A});
         _stream = _encrypted ? ProfileData.Decrypt(_original) : _original;
         _profile = ProfileContainer.Parse(_stream);
+        _progress = _profile;
+#if PROFILE_UNLOCK_TESTING
+        ProfileGameData.AttachAutomatically(_profile);
+#endif
         _work = Path.Combine(FH6LocalCryptoTool.TempWorkspace.Root, $"forza_garage_profile_{Environment.ProcessId}_{Guid.NewGuid():N}.sqlite");
         File.WriteAllBytes(_work, _profile.Database);
         _db = Open(_work, SqliteOpenMode.ReadWrite);
@@ -59,27 +71,32 @@ public sealed class GarageProfileSession : IDisposable
                     && string.Equals((string)c["type"],field.Item2,StringComparison.OrdinalIgnoreCase)));
             if (!new[]{"Id","CarId","Guid"}.All(_garageColumns.Contains)) throw new InvalidDataException("Garage layout is not recognized.");
             if (schema.Count(c => L(c["pk"]) != 0) != 1 || !schema.Any(c => (string)c["name"] == "Id" && L(c["pk"]) == 1 && (string)c["type"] == "INTEGER"))
-                EditRestriction = "This garage has an unsupported identity schema; viewing only.";
+                _layoutRestriction = "This garage has an unsupported identity schema; viewing only.";
             if (!_tables.Contains("Career_PurchasedParts") || !new[]{"GarageId","UngroupedPartEnum","PartId","PricePaid"}.All(c => Columns("Career_PurchasedParts").Contains(c)))
-                EditRestriction = "Purchased-parts layout is not recognized; viewing only.";
+                _layoutRestriction = "Purchased-parts layout is not recognized; viewing only.";
             foreach (string table in _tables.Where(t => t != "Career_Garage" && t != "Career_PurchasedParts"))
-                if (Columns(table).Contains("GarageId")) EditRestriction = $"Additional garage-linked table {table} is not supported; viewing only.";
+                if (Columns(table).Contains("GarageId")) _layoutRestriction = $"Additional garage-linked table {table} is not supported; viewing only.";
+            if (L(Scalar("SELECT COUNT(*) FROM sqlite_master WHERE type='trigger'")) != 0)
+                _layoutRestriction = "Unrecognized save database triggers; viewing only.";
             if (_tables.Contains("BarnFinds") && Columns("BarnFinds").Contains("VIN"))
                 foreach (var row in Read("SELECT VIN FROM BarnFinds WHERE VIN IS NOT NULL")) _barnVins.Add(Convert.ToString(row["VIN"])!);
             var properties = _profile.Properties;
             var current = properties?.Walk().Where(p => p.Path == "/Main/CareerCar").Select(p => p.Node).SingleOrDefault();
             if (current == null || !long.TryParse(current.DisplayValue(), NumberStyles.Integer, CultureInfo.InvariantCulture, out long id))
-                EditRestriction = "The current-car reference could not be verified; viewing only.";
+                _currentCarRestriction = "The current-car reference could not be verified; editing existing cars is disabled.";
             else {
                 _originalCurrentId = CurrentGarageId = id; _protected.Add(id);
                 if (L(Scalar("SELECT COUNT(*) FROM Career_Garage WHERE Id=$p0", id)) != 1)
-                    EditRestriction = "The current-car reference does not identify a garage record; viewing only.";
+                    _currentCarRestriction = "The current-car reference does not identify a garage record; editing existing cars is disabled.";
             }
             foreach (var p in properties?.Walk().Where(p => p.Path == "/Main/CareerCarNext") ?? Enumerable.Empty<(string Path, PropertyTree.PropertyNode Node)>())
                 if (long.TryParse(p.Node.DisplayValue(), out long pending) && pending > 0) { _pending.Add(pending); _protected.Add(pending); }
-            _nextId = Math.Max(L(Scalar("SELECT COALESCE(MAX(Id),0) FROM Career_Garage")), _protected.DefaultIfEmpty().Max());
+            // Ignore non-allocatable current/pending sentinels, but reserve every
+            // valid pending ID so a new car cannot take over that reference.
+            _nextId = Math.Max(L(Scalar("SELECT COALESCE(MAX(Id),0) FROM Career_Garage")), _protected.Where(id => id > 0 && id <= int.MaxValue).DefaultIfEmpty().Max());
             if (_tables.Contains("Career_PurchasedParts")) _nextId = Math.Max(_nextId, L(Scalar("SELECT COALESCE(MAX(GarageId),0) FROM Career_PurchasedParts")));
-            _nextId++;
+            _nextId = _nextId >= int.MaxValue ? (long)int.MaxValue + 1 : _nextId + 1;
+            _originalNextId = _nextId;
         } catch { _db.Dispose(); Cleanup(_work); throw; }
     }
     public static GarageProfileSession Load(string source) => new(source);
@@ -158,8 +175,10 @@ public sealed class GarageProfileSession : IDisposable
         HasChanges = true;
     }
     void CheckEditable() { if (!CanEdit) throw new InvalidOperationException(EditRestriction); }
-    void Atomic(Action action) {
-        CheckEditable(); long nextId = _nextId; using var tx=_db.BeginTransaction();
+    void CheckAddable() { if (!CanAddCars) throw new InvalidOperationException(AddRestriction); }
+    void Atomic(Action action, bool additionsOnly = false) {
+        if (additionsOnly) CheckAddable(); else CheckEditable();
+        long nextId = _nextId; using var tx=_db.BeginTransaction();
         try { action(); tx.Commit(); HasChanges=true; } catch { tx.Rollback(); _nextId = nextId; throw; }
     }
     Dictionary<string, object> Row(long id) => Read("SELECT * FROM Career_Garage WHERE Id=$p0",id).SingleOrDefault()
@@ -192,25 +211,39 @@ public sealed class GarageProfileSession : IDisposable
     }
     public long Duplicate(long garageId) {
         var row=Row(garageId); long added=0;
+        var progress=PrepareCollectionJournal(new[]{L(row["CarId"])},out string journalSummary);
         foreach(string field in History.Where(f=>f!="PartsValue"))if(row.ContainsKey(field))row[field]=0L;
         Atomic(()=>{
             added=Insert(row);
             // Copy only this instance's owned parts. Tunes/liveries are referenced,
             // never deleted or reassigned; a new VIN prevents perk/identity reuse.
             Exec("INSERT INTO Career_PurchasedParts (GarageId,UngroupedPartEnum,PartId,PricePaid) SELECT $p0,UngroupedPartEnum,PartId,PricePaid FROM Career_PurchasedParts WHERE GarageId=$p1",added,garageId);
-        });return added;
+        });
+        _progress=progress;JournalSyncSummary=journalSummary;
+        return added;
     }
     public long AddStock(long carId, GarageCarCatalog catalog) {
         return AddStocks(new[] { carId }, catalog)[0];
     }
     public IReadOnlyList<long> AddStocks(IReadOnlyCollection<long> carIds, GarageCarCatalog catalog) {
-        CheckEditable();
+        CheckAddable();
+        if(catalog.Game!=ForzaGame.Horizon6)throw new InvalidDataException("FH6 saves require an FH6 car catalog.");
         var ids=carIds.Distinct().ToArray();
         if(ids.Length==0)throw new InvalidOperationException("Select one or more stock cars first.");
         // Resolve every configuration before writing. One transaction means a bad
         // model or failed insert cannot leave a partially added manufacturer/batch.
         var rows=ids.Select(id=>CreateStockRow(id,catalog)).ToArray();
-        var added=new List<long>();Atomic(()=>{foreach(var row in rows)added.Add(Insert(row));});return added;
+        var progress=PrepareCollectionJournal(ids,out string journalSummary);
+        var added=new List<long>();Atomic(()=>{foreach(var row in rows)added.Add(Insert(row));}, additionsOnly: true);
+        _progress=progress;JournalSyncSummary=journalSummary;
+        return added;
+    }
+    ProfileContainer PrepareCollectionJournal(IEnumerable<long> carIds,out string summary) {
+#if PROFILE_UNLOCK_TESTING
+        return GarageCollectionJournalState.Stage(_progress,carIds,out summary);
+#else
+        summary="Car Collection Journal sync is unavailable in this build.";return _progress;
+#endif
     }
     Dictionary<string,object> CreateStockRow(long carId, GarageCarCatalog catalog) {
         var configuration=catalog.StockConfiguration(carId);
@@ -242,7 +275,11 @@ public sealed class GarageProfileSession : IDisposable
         string candidate=Path.Combine(Path.GetDirectoryName(destination)!,".garage-export-"+System.Guid.NewGuid().ToString("N")+".tmp");
         try {
             Cleanup(snapshot);using(var output=Open(snapshot,SqliteOpenMode.ReadWriteCreate))_db.BackupDatabase(output);
-            var exported=ProfileContainer.Parse(_stream);exported.Database=File.ReadAllBytes(snapshot);
+            // _progress contains only changes accepted by the scoped Journal
+            // transaction; _profile remains the immutable load/revert snapshot.
+            byte[] expectedProgress=_progress.Serialize();
+            var expected=ProfileContainer.Parse(expectedProgress);
+            var exported=ProfileContainer.Parse(expectedProgress);exported.Database=File.ReadAllBytes(snapshot);
             if(CurrentGarageId != _originalCurrentId) {
                 var current=exported.Properties?.Walk().Single(p=>p.Path=="/Main/CareerCar").Node;
                 if(current==null || !current.TrySetFromText(CurrentGarageId.ToString(CultureInfo.InvariantCulture)))
@@ -253,7 +290,8 @@ public sealed class GarageProfileSession : IDisposable
             if(!stream.AsSpan().SequenceEqual(check))throw new InvalidDataException("Exported save failed payload round-trip verification.");
             var packed=ProfileContainer.Parse(check);
             // Restore only the explicitly changed current-car leaf on a verification
-            // copy. Exact equality then proves every other account/progress byte stayed intact.
+            // copy. Exact equality then proves every other account/progress byte
+            // matches the separately validated Journal plan, not arbitrary edits.
             if(CurrentGarageId != _originalCurrentId) {
                 var current=packed.Properties?.Walk().Single(p=>p.Path=="/Main/CareerCar").Node;
                 if(current==null || current.DisplayValue()!=CurrentGarageId.ToString(CultureInfo.InvariantCulture) ||
@@ -261,7 +299,7 @@ public sealed class GarageProfileSession : IDisposable
                     throw new InvalidDataException("Exported current-car reference failed verification.");
                 packed = ProfileContainer.Parse(packed.Serialize());
             }
-            for(int i=0;i<3;i++)if(!packed.Sections[i].Payload.AsSpan().SequenceEqual(_profile.Sections[i].Payload))throw new InvalidDataException("An unexpected account/progress change occurred; export rejected.");
+            for(int i=0;i<3;i++)if(!packed.Sections[i].Payload.AsSpan().SequenceEqual(expected.Sections[i].Payload))throw new InvalidDataException("An unexpected account/progress change occurred; export rejected.");
             using (var file=new FileStream(candidate,FileMode.CreateNew,FileAccess.Write)) { file.Write(bytes);file.Flush(true); }
             File.Move(candidate,destination,false);HasChanges=false;
         } finally { Cleanup(snapshot); Cleanup(candidate); }
@@ -273,7 +311,9 @@ public sealed class GarageProfileSession : IDisposable
             using var original=Open(snapshot,SqliteOpenMode.ReadOnly);
             original.BackupDatabase(_db);
             CurrentGarageId=_originalCurrentId;
+            _nextId=_originalNextId;
             _protected.Clear();_protected.UnionWith(_pending);_protected.Add(CurrentGarageId);
+            _progress=_profile;JournalSyncSummary="";
             HasChanges=false;
         } finally { Cleanup(snapshot); }
     }

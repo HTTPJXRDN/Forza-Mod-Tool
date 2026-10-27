@@ -1,0 +1,15 @@
+DB Browser
+
+Back up your DB. This tab keeps its own working copy.
+
+1. Open an FH2/FH5/FH6 SLT or SQLite database. Decrypt FM8 GameDBs in Crypto first.
+2. Browse Data: choose a table, then search or filter its rows.
+3. Double-click a cell to edit it. The single-cell editor uses Apply cell.
+4. Write changes keeps your edits in the working copy.
+5. Export as writes the file you keep. Encrypted SLT export needs the matching original template.
+
+- Execute SQL: F5 runs the query. Only run SQL you understand.
+- Revert changes discards edits since the last Write changes or export.
+- Scratch pad is for notes and IDs. Import/export uses TXT files. Notes clear when the tool closes.
+- Use Profile Editor for complete FH6 profiles. Older profile SQLite exports need their profile template in Crypto.
+- Export and reload to move edits between tabs.

@@ -17,17 +17,21 @@ public partial class ProfileEditorView
         summary.Foreground = (System.Windows.Media.Brush)FindResource("Ink"); summary.FontSize = 13;
         OverviewPanel.Children.Add(summary);
         var preview = Note(""); preview.Name = "DriverXpPreview";
-        var row = EditRow("Driver XP", "preview the resulting level before applying; level-up rewards are not granted",
+        var row = EditRow("Driver XP", "syncs earned-XP totals and the level preview; level-up rewards are not granted",
             level.Xp.ToString(CultureInfo.InvariantCulture), text =>
             {
                 if (!uint.TryParse(text.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out uint value))
                     return (false, "enter a whole number from 0 to 4,294,967,295");
-                if (!DriverXpState.TrySet(_container, value, out bool changed)) return (false, "this save's driver XP layout is not recognized");
+                if (!DriverXpState.TrySet(_container, value, out bool changed, out string reason)) return (false, reason);
 #if PROFILE_UNLOCK_TESTING
                 _hasUnlockTestEdits |= changed;
 #endif
                 summary.Text = "Driver level: " + DriverXpState.Calculate(value).Display;
+#if PROFILE_UNLOCK_TESTING
+                _refreshOnlineXpPreview?.Invoke();
+#endif
                 BuildProperties();
+                RefreshSaveStateDisplays();
                 return (true, value.ToString(CultureInfo.InvariantCulture));
             });
         row.Name = "DriverXpRow";
@@ -37,7 +41,8 @@ public partial class ProfileEditorView
         {
             if (!uint.TryParse(input.Text.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out uint value))
             { preview.Text = "XP preview: enter a whole number from 0 to 4,294,967,295."; return; }
-            var result = DriverXpState.Calculate(value);
+            if (!DriverXpState.TryPreview(_container, value, out var result, out string reason))
+            { preview.Text = "XP preview unavailable: " + reason; return; }
             preview.Text = "XP preview: " + result.Display + (result.XpToNextLevel is { } next ? $" · {next:n0} XP to next level" : " · Maximum level");
         }
         input.TextChanged += (_, _) => Preview(); Preview();

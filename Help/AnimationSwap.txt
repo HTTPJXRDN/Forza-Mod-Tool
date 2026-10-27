@@ -1,0 +1,14 @@
+Animation Swap
+
+Back up the car file. Close the game before installing the output.
+
+1. Open a car ZIP or carclips_<ID>.clipd.
+2. Choose FRONT DOORS or REAR DOORS, then a donor car.
+3. Apply donor to the selected animation. Front and rear can use different donors.
+4. Save As writes a new file. A raw CLIPD must go back inside its car ZIP.
+
+- Fix DB ride height / spacers removes animation overrides that can hide DB stance edits.
+- Manage CLIPD channels adds or removes selected channels. Existing IDs are kept.
+- Adjust start/end changes the selected channel's position and rotation.
+- Reset discards pending edits.
+- Non-door channels are experimental and may need a matching model or skeleton.

@@ -1,0 +1,33 @@
+Car Editor
+
+Switch to a different car, wait for the game to save, then close it. Back up your GameDB.
+
+1. Load SLT / DB opens FH2, FH5 or FH6 databases. Decrypt FM8 in Crypto first.
+2. Select a car. Ctrl/Shift-click selects several for batch edits.
+3. Check the options you want, edit their values, then APPLY changes. Engine and motor buttons apply their own changes.
+4. Export SLT / Export DB saves the result. Apply alone does not save a file.
+
+Fitment
+- Select Stock or the right Widebody tab before editing.
+- FH5/FH6 track width uses mm per side. Enter 20 for 20 mm on each side. The + step starts at 5 mm; Step (mm) changes it.
+- To repair old size labels, check Track offset and Apply without adding steps. This also works on multiple cars.
+- Install any exported stringtables folder in MediaPC\stripped. Keep a backup of existing string tables.
+- Added-widebody base tracks use metres. Adding a kit does not add a body model.
+- FH2 tire profile and track width are disabled. Use the separate FH2 wheel mod.
+- FM direct offsets use mm. Their effect in-game is still unconfirmed.
+
+Other tools
+- Race/Drift suspension can be reapplied to repair old tuning ranges.
+- FH2 steering angle affects the whole car. Uncheck the override and Apply to restore stock steering.
+- Car bucket: choose a name, then Set bucket.
+- Label stock engines uses car name - engine name. Names affect every car using that engine.
+- Restore selected car resets its own DB records, including DB Browser edits. Engine names and shared parts are kept; check the log for skipped items.
+- Extreme power or handling values can raise PI to X999.
+- Auto-find, Folder and Archive choose stock previews. Sources are remembered per game.
+
+Install
+- FH5/FH6: put encrypted SLTs at MediaPC\stripped\gamedbRC.slt. Leave media\stripped untouched.
+- FM: re-encrypt the edited DB, then replace media\base\gamedb.slt. Back up the original before replacing it.
+- FH2: SLTs stay plain.
+
+Export and reload when moving edits between tabs.

@@ -32,7 +32,8 @@ public partial class ProfileEditorView
                 ? "Select rows (Ctrl-click for more, Ctrl+A for all), then click Complete selected challenges. Unsupported rows are kept unchanged."
                 : "Select rows (Ctrl-click for more, Ctrl+A for all), then Complete selected challenges. Points, wristbands, linked race results, PR stunts and job rank update automatically.");
         help.Name = "CollectionJournalHelp"; OverviewPanel.Children.Add(help);
-        OverviewPanel.Children.Add(Note("World sync: boards/mascots, landmarks and Story stars. For regions, complete all ten rows. Story results use completion and stars; online records stay unchanged."));
+        OverviewPanel.Children.Add(Note("DLC cars are excluded from Car Collection challenges here and from automatic Journal completion. They remain available in Garage Editor; existing saved completions and points are preserved. Promo photo entries are unchanged."));
+        OverviewPanel.Children.Add(Note("World sync: boards/mascots, landmarks, Story stars and Promo cars photographed. Promo selections also repair older completed photo flags; picture files stay unchanged. For regions, complete all ten rows."));
 
         var filters = new WrapPanel { Margin = new Thickness(0, 8, 0, 6) };
         var campaign = new ComboBox
@@ -130,6 +131,7 @@ public partial class ProfileEditorView
                     Log("Select supported unfinished challenges. Missing/changed definitions stay read-only; bonuses are automatic.", "info");
                     return;
                 }
+                CaptureJournalDatabase();
                 if (!CollectionJournalState.TryPreview(_container, ids, out var preview, out string error))
                     throw new InvalidOperationException(error);
                 if (!preview.Changed) { Log("Selected journal challenges were already completed; no points were added", "info"); return; }
@@ -141,21 +143,24 @@ public partial class ProfileEditorView
                     + (preview.LandmarksUpdated > 0 ? $"Discover {preview.LandmarksUpdated} permanent landmark(s). " : "")
                     + (preview.RegionsUpdated ? "Discover all ten regions and reveal map fog. " : "")
                     + (preview.StoriesUpdated > 0 ? $"Sync {preview.StoriesUpdated} Story chapter completion/star result(s). Story PB times remain unchanged. " : "")
+                    + (preview.PromoCarsUpdated > 0 ? $"Update in-game Promo photo progress for {preview.PromoCarsUpdated} car(s). " : "")
                     + $"Festival points: {preview.PreviousFestivalPoints:n0} → {preview.FestivalPoints:n0}; Discover Japan: {preview.PreviousDiscoveryPoints:n0} → {preview.DiscoveryPoints:n0}. "
                     + $"Wristband: {ProfileUnlockTestState.Wristbands[preview.PreviousBand].Name} → {ProfileUnlockTestState.Wristbands[preview.Band].Name}. "
                     + (unavailable > 0 ? $"{unavailable} unavailable row(s) will stay unchanged. " : "")
-                    + "This changes local progress only; it does not add cars, photos, online results or claimed rewards.")) return;
-                if (!CollectionJournalState.TryComplete(_container, ids, out var changed, out error)) throw new InvalidOperationException(error);
+                    + "Selected Promo entries also update in-game photo progress. Car ownership, saved pictures, online records and reward claims stay unchanged.")) return;
+                if (!CollectionJournalState.TryComplete(_container, ids, out var changed, out error, CommitJournalDatabase)) throw new InvalidOperationException(error);
                 _hasUnlockTestEdits |= changed.Changed;
+                if (changed.PromoCarsUpdated > 0) { RenderTables(); if (_currentTable == "PhotoCaptures") LoadTable(_currentTable); }
                 RefreshSaveStateDisplays(); BuildCareer(); BuildOverview();
                 Log($"Collection Journal: {changed.SelectedCompleted} selected + {changed.AutomaticCompleted} automatic; "
                     + $"Festival {changed.PreviousFestivalPoints:n0} → {changed.FestivalPoints:n0}; Discovery {changed.PreviousDiscoveryPoints:n0} → {changed.DiscoveryPoints:n0}; "
                     + $"wristband {ProfileUnlockTestState.Wristbands[changed.Band].Name}; {changed.RacesUpdated} race result(s), {changed.PrStuntsUpdated} PR stunt(s) synced"
-                    + (changed.JobLevel > 0 ? $"; Food Delivery level {changed.JobLevel}" : "") + " — Save edited to export separately", "ok");
+                    + (changed.JobLevel > 0 ? $"; Food Delivery level {changed.JobLevel}" : "") + " — click Export save", "ok");
+                if (changed.PromoCarsUpdated > 0) Log($"Horizon Promo: {changed.PromoCarsUpdated} car(s) marked photographed; existing captures preserved.", "ok");
                 if (changed.BoardsUpdated + changed.MascotsUpdated + changed.LandmarksUpdated + changed.StoriesUpdated > 0 || changed.RegionsUpdated)
                     Log($"World progress: {changed.BoardsUpdated} boards, {changed.MascotsUpdated} mascots, {changed.LandmarksUpdated} landmarks, "
                         + $"regions {(changed.RegionsUpdated ? "revealed" : "unchanged")}, {changed.StoriesUpdated} Story chapter(s). Story finishing-time PBs were not edited.", "info");
-                StatusLine.Text = "Journal completion and progression applied to working copy — Save edited to export separately";
+                StatusLine.Text = "Journal completion and progression applied to working copy — click Export save";
             }
             catch (Exception ex) { Fail("complete Collection Journal challenges", ex); }
         };

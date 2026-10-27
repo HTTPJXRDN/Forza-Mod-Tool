@@ -416,7 +416,13 @@ public sealed partial class BrowserDatabase : IDisposable
                     throw new InvalidDataException("Export failed SQLite quick_check.");
             }
             if (slt) GameDbSqliteBridge.EncryptSnapshot(partial, template!, output);
-            else File.Move(partial, output);
+            else
+            {
+                using var labels = TrackSpacingLabelExport.Prepare(partial, output, SourcePath);
+                labels.Publish();
+                File.Move(partial, output);
+                labels.Complete();
+            }
             HasChanges = false;
         }
         finally { DeleteOwned(partial); }

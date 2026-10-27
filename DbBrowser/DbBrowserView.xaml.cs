@@ -31,6 +31,7 @@ public partial class DbBrowserView : UserControl
         if (_loadedHook) return; _loadedHook = true;
         OwnerWindow.Closing += (_, args) => {
             if(args.Cancel)return;
+            if (_scratchPadBusy) { args.Cancel = true; ScratchPadStatus.Text = "Wait for the scratch-pad file operation to finish, then close again."; return; }
             if (_busy) { args.Cancel = true; _cancel?.Cancel(); Status.Text = "Cancelling operation. Close again when it finishes."; return; }
             if (!CommitInlineEdit()) { args.Cancel = true; return; }
             if(!DiscardCellDraft()){args.Cancel=true;return;}
@@ -43,14 +44,15 @@ public partial class DbBrowserView : UserControl
     {
         WriteButton.IsEnabled = RevertButton.IsEnabled = _database?.Pending == true;
         ExportButton.IsEnabled = _database != null;
-        DatabaseArea.IsEnabled = _database != null;
+        DatabaseToolbar.IsEnabled = !_busy;
+        BrowserTabs.IsEnabled = InspectorTabs.IsEnabled = SqlLogExpander.IsEnabled = _database != null && !_busy;
     }
     async Task Run(string description, Func<CancellationToken, Task> action, bool allowCancel = true)
     {
         if (_busy) return;
         if (!CommitInlineEdit()) return;
         if (_cellDirty && !description.StartsWith("Applying cell", StringComparison.Ordinal) && !DiscardCellDraft()) return;
-        _busy = true; WorkArea.IsEnabled = false; CancelButton.Visibility = allowCancel ? Visibility.Visible : Visibility.Collapsed;
+        _busy = true; UpdateButtons(); CancelButton.Visibility = allowCancel ? Visibility.Visible : Visibility.Collapsed;
         using var cancellation = new CancellationTokenSource(); _cancel = cancellation;
         Status.Text = description;
         try { await action(cancellation.Token); }
@@ -59,7 +61,7 @@ public partial class DbBrowserView : UserControl
             Status.Text = "Failed: " + ex.Message;
             MessageBox.Show(OwnerWindow, ex.Message + "\n\nThe input file was not changed.", "DB Browser", MessageBoxButton.OK, MessageBoxImage.Error);
         }
-        finally { _busy = false; _cancel = null; WorkArea.IsEnabled = true; CancelButton.Visibility = Visibility.Collapsed; UpdateButtons(); }
+        finally { _busy = false; _cancel = null; CancelButton.Visibility = Visibility.Collapsed; UpdateButtons(); }
     }
     async void Open_Click(object sender, RoutedEventArgs e)
     {
@@ -265,7 +267,12 @@ public partial class DbBrowserView : UserControl
             var original = new OpenFileDialog { Title = "Choose original encrypted GameDB template", Filter = "Encrypted GameDB|*.slt" };
             if (original.ShowDialog(OwnerWindow) != true) return; template = original.FileName;
         }
-        await Run("Exporting and validating new database…", async _ => { await Task.Run(() => _database.Export(dialog.FileName, template)); Status.Text = "Exported: " + dialog.FileName + ". SQLite integrity verified; game compatibility still needs testing."; }, false);
+        await Run("Exporting and validating new database…", async _ => {
+            await Task.Run(() => _database.Export(dialog.FileName, template));
+            Status.Text = "Exported: " + dialog.FileName + ". SQLite integrity verified; game compatibility still needs testing.";
+            if (Directory.Exists(TrackSpacingLabelExport.Folder(dialog.FileName)))
+                Status.Text += " Drag the exported mediapc\\stripped\\stringtables folder into your game's mediapc\\stripped folder too.";
+        }, false);
     }
     void Close_Click(object sender, RoutedEventArgs e)
     {

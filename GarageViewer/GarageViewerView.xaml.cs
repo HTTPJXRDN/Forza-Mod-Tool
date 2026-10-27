@@ -38,10 +38,10 @@ public sealed class GarageRow(GarageEntry entry, string name, bool modelLocked) 
 public partial class GarageViewerView : UserControl
 {
     GarageProfileSession? _session;
+    readonly Fh2SaveHost _fh2Host;
     GarageCarCatalog? _catalog;
     GarageThumbnailCache? _thumbnails;
     CarThumbnailLibrary? _stockThumbnails;
-    string? _catalogSource;
     GarageThumbnailResolver? _resolver;
     GarageThumbnailCache? _resolverCache;
     CarThumbnailLibrary? _resolverStock;
@@ -62,10 +62,33 @@ public partial class GarageViewerView : UserControl
     public GarageViewerView()
     {
         InitializeComponent();
+        ToolTipService.SetShowOnDisabled(AddButton, true);
+        _fh2Host = new Fh2SaveHost(this, garage: true);
         CatalogList.CommandBindings.Add(new CommandBinding(ApplicationCommands.SelectAll,
             (_, e) => { CatalogList.SelectAll(); UpdateButtons(); e.Handled = true; },
             (_, e) => { e.CanExecute = !_busy && CatalogList.IsEnabled && CatalogList.Items.Count > 0; e.Handled = true; }));
         CatalogList.InputBindings.Add(new KeyBinding(ApplicationCommands.SelectAll, Key.A, ModifierKeys.Control));
+    }
+    void GarageHeader_SizeChanged(object sender, SizeChangedEventArgs e) => UpdateGarageHeaderLayout();
+
+    void UpdateGarageHeaderLayout()
+    {
+        if (GarageHeaderLayout == null || GarageHeaderActions == null || GarageHeaderLayout.ActualWidth <= 0) return;
+        // Keep the standard one-line header at normal widths. On narrow windows,
+        // wrap the same buttons below the title inside the header, never over it.
+        double actionsWidth = GarageHeaderActions.Children.OfType<FrameworkElement>().Sum(button => button.DesiredSize.Width);
+        if (actionsWidth <= 0) return;
+        // Include the title's new help icon when deciding when to wrap actions.
+        double titleWidth = GarageHeaderTitle.Children.OfType<FrameworkElement>().FirstOrDefault()?.DesiredSize.Width ?? 0;
+        actionsWidth += Math.Max(0, titleWidth + GarageHeaderTitle.Margin.Left + GarageHeaderTitle.Margin.Right - 196);
+        bool stacked = GarageHeaderLayout.ActualWidth < actionsWidth + 196;
+        int row = stacked ? 1 : 0;
+        if (Grid.GetRow(GarageHeaderActions) == row) return;
+        Grid.SetRow(GarageHeaderActions, row);
+        Grid.SetColumn(GarageHeaderActions, stacked ? 0 : 1);
+        Grid.SetColumnSpan(GarageHeaderActions, stacked ? 2 : 1);
+        GarageHeaderActions.HorizontalAlignment = stacked ? HorizontalAlignment.Left : HorizontalAlignment.Right;
+        GarageHeaderActions.Margin = stacked ? new Thickness(0, 8, 0, 0) : new Thickness(0);
     }
     void GarageFields_Expanded(object sender,RoutedEventArgs e) {
         if(GarageFieldsRow==null || GarageListHeightSplitter==null)return;
@@ -113,6 +136,7 @@ public partial class GarageViewerView : UserControl
     }
     async Task LoadProfileAsync(string path)
     {
+        if (!_busy && Fh2SaveRevision.IsCandidate(path)) { await _fh2Host.OpenAsync(path); return; }
         if (_busy || !TryApplyCarFields() || !ConfirmDiscard()) return;
         ClearCarFields();
         await RunAsync(() => {
@@ -123,15 +147,10 @@ public partial class GarageViewerView : UserControl
     async void Load_Click(object sender, RoutedEventArgs e)
     {
         if (_busy) return;
-        var dialog = new OpenFileDialog { Title = "Load FH6 C_ProfileData", Filter = "Profile saves (C_ProfileData*)|C_ProfileData*|All files|*.*" };
+        var dialog = new OpenFileDialog { Title = "Load FH6 C_ProfileData or FH2 revision file", Filter = "FH6 / FH2 save files|C_ProfileData*;commit;ProfileData;PlayerDatabase|All files|*.*" };
         if (dialog.ShowDialog() == true) await LoadProfileAsync(dialog.FileName);
     }
-    async void Catalog_Click(object sender, RoutedEventArgs e)
-    {
-        if (_busy || !TryApplyCarFields()) return;
-        var dialog = new OpenFileDialog { Title = "Matching full FH6 GameDB catalog", Filter = "Game databases|*.slt;*.sqlite;*.db|All files|*.*" };
-        if (dialog.ShowDialog() == true) await RunAsync(() => { var next = GarageCarCatalog.Load(dialog.FileName); var previous = _catalog; _catalog = next; _catalogSource=dialog.FileName; previous?.Dispose(); _stockThumbnails=FindStockThumbnails(); }, "Reading car names and stock parts…");
-    }
+    async void LoadFh2_Click(object sender, RoutedEventArgs e) { if (!_busy) await _fh2Host.ChooseAsync(); }
     static string StockSourceSetting => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ForzaModTool", "garage-stock-thumbnail-source.json");
     CarThumbnailLibrary? FindStockThumbnails(string? manual = null, bool resetAuto = false) {
         string? preferred=manual;
@@ -143,7 +162,7 @@ public partial class GarageViewerView : UserControl
             try {return new CarThumbnailLibrary(preferred);}
             catch(Exception ex) when(manual==null && ex is IOException or UnauthorizedAccessException or ArgumentException) { }
         }
-        foreach(string path in CarThumbnailLibrary.FindSources(_catalogSource,false).Concat(new[]{CarThumbnailLibrary.SavedSource(false)}).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase)) {
+        foreach(string path in CarThumbnailLibrary.FindSources(null,false).Concat(new[]{CarThumbnailLibrary.SavedSource(false)}).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase)) {
             try {return new CarThumbnailLibrary(path);}
             catch(Exception ex) when(ex is IOException or UnauthorizedAccessException or ArgumentException) { }
         }
@@ -214,10 +233,10 @@ public partial class GarageViewerView : UserControl
     {
         var models = _catalog?.Cars.ToDictionary(c => c.Id);
         _rows = _session?.Entries().Select(c => models != null && models.TryGetValue(c.CarId, out var model)
-            ? new GarageRow(c, model.DisplayName + (model.IsInitialDrive ? " [Initial Drive variant]" : ""), model.RemovalLocked) { Manufacturer = model.Manufacturer, MediaName=model.MediaName } : new GarageRow(c, $"Unknown car ({c.CarId}) — load matching GameDB", false)).ToArray() ?? Array.Empty<GarageRow>();
+            ? new GarageRow(c, model.DisplayName + (model.IsInitialDrive ? " [Initial Drive variant]" : ""), model.RemovalLocked) { Manufacturer = model.Manufacturer, MediaName=model.MediaName } : new GarageRow(c, $"Unknown car ({c.CarId}) — not in built-in catalog", false)).ToArray() ?? Array.Empty<GarageRow>();
         LoadedPath.Text = _session == null ? "Open or drop a C_ProfileData save here. The original file is never overwritten."
             : _session.SourcePath + (_session.HasChanges ? " • unexported edits" : " • private working copy") + (_session.CanEdit ? "" : "\n" + _session.EditRestriction);
-        CatalogLabel.Text = _catalog == null ? "No car catalog loaded." : $"{_catalog.Label} • {_catalog.Cars.Count(c => c.CanAddToGarage && !c.IsTraffic):N0} regular / {_catalog.Cars.Count(c => c.CanAddToGarage && c.IsTraffic):N0} traffic choices • load your GameDB for newer/custom cars";
+        CatalogLabel.Text = _catalog == null ? "No car catalog loaded." : $"{_catalog.Label} • {_catalog.Cars.Count(c => c.CanAddToGarage && !c.IsTraffic):N0} regular / {_catalog.Cars.Count(c => c.CanAddToGarage && c.IsTraffic):N0} traffic choices";
         MissingCarsOnlyBox.IsEnabled = _session != null;
         ThumbnailCacheLabel.Text=_thumbnailMessage;
         StockThumbnailLabel.Text=_stockThumbnails==null?"Stock fallback not found • Auto-find or choose a folder":$"Stock fallback: {_stockThumbnails.Count:N0} models • cached images first";
@@ -337,7 +356,11 @@ public partial class GarageViewerView : UserControl
         DuplicateButton.IsEnabled = editable && selected.Length == 1;
         CurrentButton.IsEnabled = editable && _session?.CanChangeCurrentCar == true && selected.Length == 1 && selected[0].Id != _session.CurrentGarageId;
         int additions=CatalogList.SelectedItems.Count;
-        AddButton.IsEnabled = editable && _catalog != null && additions > 0;
+        AddButton.IsEnabled = !_busy && _session?.CanAddCars == true && _catalog != null && additions > 0;
+        AddButton.ToolTip = _session == null ? "Load a C_ProfileData save first."
+            : !_session.CanAddCars ? _session.AddRestriction
+            : additions == 0 ? "Select one or more models from ADD STOCK CARS."
+            : "Add the selected stock cars without changing existing cars or current-car references.";
         AddButton.Content = additions > 0 ? $"Add selected cars ({additions})" : "Add selected cars";
         ExportButton.IsEnabled = !_busy && (_session?.HasChanges == true || CarFieldsDirty());
         RevertButton.IsEnabled = !_busy && (_session?.HasChanges == true || CarFieldsDirty());
@@ -430,7 +453,7 @@ public partial class GarageViewerView : UserControl
         if (selected.Length == 0 || !confirm($"Remove {selected.Length} selected garage instance(s) and their purchased parts from this working copy?\n\nNo live save, livery file, or tune file will be deleted. Export to a new save to keep the result.")) return;
         var ids = selected.Select(c => c.Id).ToArray();
         var locked = _catalog?.Cars.Where(c => c.RemovalLocked).Select(c => c.Id).ToHashSet();
-        if (selected.Any(c => c.Name.StartsWith("Unknown car ("))) { StatusText.Text = "Load a matching GameDB before removing unknown models."; return; }
+        if (selected.Any(c => c.Name.StartsWith("Unknown car ("))) { StatusText.Text = "Unknown models cannot be safely removed because their removal restrictions are not in the built-in catalog."; return; }
         await RunAsync(() => _session.Remove(ids, locked), "Removing selected garage instances…", "Removed from working copy. Export edited save to keep these changes.");
     }
     async void Remove_Click(object sender, RoutedEventArgs e) => await RemoveSelectedAsync(text => MessageBox.Show(text, "Remove garage cars", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes);
@@ -439,7 +462,7 @@ public partial class GarageViewerView : UserControl
         if (_busy || _session == null || GarageGrid.SelectedItem is not GarageRow selected || !TryApplyCarFields()) return;
         long id = 0;
         await RunAsync(() => id = _session.Duplicate(selected.Id), "Duplicating car with a new garage ID and VIN…", "Duplicated in working copy. Export edited save to keep it.");
-        if (id != 0) Refresh(id);
+        if (id != 0) { Refresh(id); StatusText.Text += "\n" + _session.JournalSyncSummary; }
     }
     async void Current_Click(object sender, RoutedEventArgs e)
     {
@@ -453,8 +476,9 @@ public partial class GarageViewerView : UserControl
         var selected=CatalogList.SelectedItems.Cast<GarageCarDefinition>().Select(c=>c.Id).ToArray();
         if(selected.Length==0)return;
         IReadOnlyList<long> ids=Array.Empty<long>();
-        await RunAsync(() => ids = _session.AddStocks(selected, _catalog), $"Creating {selected.Length} stock car configuration(s)…", $"Added {selected.Length} stock car(s) to working copy. Export a new save to keep them.");
+        await RunAsync(() => ids = _session.AddStocks(selected, _catalog), $"Creating {selected.Length} stock car configuration(s) and syncing Car Collection…", $"Added {selected.Length} stock car(s) to working copy. Export a new save to keep them.");
         if(ids.Count>0) {
+            StatusText.Text += "\n" + _session.JournalSyncSummary;
             _restoringSelection=true;
             try {GarageGrid.SelectedItems.Clear();foreach(var row in _rows.Where(c=>ids.Contains(c.Id))) GarageGrid.SelectedItems.Add(row);}
             finally {_restoringSelection=false;}
@@ -463,7 +487,7 @@ public partial class GarageViewerView : UserControl
     }
     async void Revert_Click(object sender, RoutedEventArgs e)
     {
-        if (_busy || _session == null || MessageBox.Show("Revert all garage edits to the snapshot taken when this save was loaded?", "Garage Viewer", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+        if (_busy || _session == null || MessageBox.Show("Revert all garage edits and linked Car Collection Journal changes to the snapshot taken when this save was loaded?", "Garage Viewer", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
         ClearCarFields();await RunAsync(() => _session.Revert(), "Restoring original garage snapshot…");
     }
     async void Export_Click(object sender, RoutedEventArgs e)
@@ -475,7 +499,7 @@ public partial class GarageViewerView : UserControl
     async void File_Drop(object sender, DragEventArgs e)
     {
         e.Handled = true;
-        if (!_busy && e.Data.GetData(DataFormats.FileDrop) is string[] { Length: 1 } paths && File.Exists(paths[0])) await LoadProfileAsync(paths[0]);
+        if (!_busy && e.Data.GetData(DataFormats.FileDrop) is string[] { Length: 1 } paths && (File.Exists(paths[0]) || Directory.Exists(paths[0]))) await LoadProfileAsync(paths[0]);
     }
-    void File_DragOver(object sender, DragEventArgs e) { e.Effects = !_busy && e.Data.GetData(DataFormats.FileDrop) is string[] { Length: 1 } paths && File.Exists(paths[0]) ? DragDropEffects.Copy : DragDropEffects.None; e.Handled = true; }
+    void File_DragOver(object sender, DragEventArgs e) { e.Effects = !_busy && e.Data.GetData(DataFormats.FileDrop) is string[] { Length: 1 } paths && (File.Exists(paths[0]) || Directory.Exists(paths[0])) ? DragDropEffects.Copy : DragDropEffects.None; e.Handled = true; }
 }

@@ -133,6 +133,8 @@ public partial class DbBrowserView
     async void GoPage_KeyDown(object sender,KeyEventArgs e) { if(e.Key!=Key.Enter)return; e.Handled=true; if(_page==null || !int.TryParse(GoPage.Text,out int page) || page<1) return; _pageIndex=(int)Math.Min(page-1,Math.Max(0,(_page.Count-1)/BrowserDatabase.PageSize)); await Run("Loading page…",LoadPage); }
     async void SqlSelection_Click(object sender,RoutedEventArgs e) { if (SqlEditor.SelectionLength==0) {Status.Text="Select SQL text to execute first.";return;} await ExecuteSql(SqlEditor.SelectedText); }
     void Browser_KeyDown(object sender,KeyEventArgs e) {
+        // Scratch-pad keystrokes are notes, never database shortcuts.
+        if (ScratchPad.IsKeyboardFocusWithin) return;
         if(e.Key==Key.F5){e.Handled=true;if(BrowserTabs.SelectedIndex!=3)Refresh_Click(sender,e);else if(SqlEditor.SelectionLength>0)SqlSelection_Click(sender,e);else Sql_Click(sender,e);}
         else if(e.Key==Key.Enter&&Keyboard.Modifiers==ModifierKeys.Control){e.Handled=true;if(CellText.IsKeyboardFocusWithin)ApplyCell_Click(sender,e);else if(BrowserTabs.SelectedIndex==3){if(SqlEditor.SelectionLength>0)SqlSelection_Click(sender,e);else Sql_Click(sender,e);}}
     }
