@@ -15,6 +15,7 @@ public sealed record UpdateDbMergePreview(string UpdatedPath, string ModdedPath,
     public string BaselineVersion { get; init; } = "";
     public string UpdatedVersion { get; init; } = "";
     public int DeletedRows { get; init; }
+    public IReadOnlyList<string> Notes { get; init; } = Array.Empty<string>();
     internal IReadOnlyList<DeltaTable> Delta { get; init; } = Array.Empty<DeltaTable>();
 }
 
@@ -25,10 +26,12 @@ public static class UpdateDbMerge
         updated = Path.GetFullPath(updated); modded = Path.GetFullPath(modded);
         if (updated.Equals(modded, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("The updated and modded databases must be different files.");
+        GameDbIdentity.RequireSameGame(updated, modded);
         string updatedVersion = StockDatabaseCatalog.Version(updated), version = StockDatabaseCatalog.Version(modded);
         baseline ??= StockDatabaseCatalog.Find(modded) ?? throw new InvalidOperationException(
             $"No embedded clean baseline matches stamp {version}. Select the unmodified GameDB from the SAME game version as your modded DB.");
         baseline = Path.GetFullPath(baseline);
+        GameDbIdentity.RequireSameGame(modded, baseline);
         if (baseline.Equals(modded, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("The clean baseline must not be your modded database.");
         if (StockDatabaseCatalog.Version(baseline) != version)
@@ -41,8 +44,8 @@ public static class UpdateDbMerge
             if (Convert.ToInt64(check.ExecuteScalar()) == 0x46483643)
                 throw new InvalidDataException("This is a sparse car export, not a complete modded GameDB. Use Import car DB instead.");
         }
-        var warnings = new List<string>();
-        var tables = GameDbDelta.Inspect(db, warnings);
+        var warnings = new List<string>(); var notes = new List<string>();
+        var tables = GameDbDelta.Inspect(db, warnings, notes);
         if (Hash(updated) != updatedHash || Hash(modded) != moddedHash || Hash(baseline) != baselineHash)
             throw new InvalidOperationException("An input changed during comparison. Start the merge again.");
         return new(updated, modded, updatedHash, moddedHash, tables.Sum(t => t.Added), tables.Sum(t => t.Changed),
@@ -50,7 +53,7 @@ public static class UpdateDbMerge
             tables.ToDictionary(t => t.Name, t => t.Added, StringComparer.OrdinalIgnoreCase))
         {
             BaselinePath = baseline, BaselineHash = baselineHash, BaselineVersion = version,
-            UpdatedVersion = updatedVersion, DeletedRows = tables.Sum(t => t.Deleted), Delta = tables
+            UpdatedVersion = updatedVersion, DeletedRows = tables.Sum(t => t.Deleted), Notes = notes, Delta = tables
         };
     }
 
@@ -74,6 +77,7 @@ public static class UpdateDbMerge
                 db.Open(); GameDbDelta.Exec(db, "PRAGMA foreign_keys=OFF");
                 GameDbDelta.Attach(db, "ov", preview.ModdedPath); GameDbDelta.Attach(db, "old", preview.BaselinePath);
                 log?.Invoke($"Three-way merge: baseline {preview.BaselineVersion} -> update {preview.UpdatedVersion}. Applying {preview.DeletedRows:n0} deliberate baseline deletions.");
+                foreach (string note in preview.Notes) log?.Invoke(note);
                 GameDbDelta.Apply(db, preview.Delta, log);
                 using var check = db.CreateCommand(); check.CommandText = "PRAGMA quick_check";
                 if (!string.Equals(Convert.ToString(check.ExecuteScalar()), "ok", StringComparison.OrdinalIgnoreCase))

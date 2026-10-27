@@ -22,6 +22,8 @@ public partial class UpdateDbMergeWindow : Window
                   string.Join("\n", preview.KeylessTables)
                 : $"Matched clean baseline stamp: {preview.BaselineVersion}\nUpdated stamp: {preview.UpdatedVersion}\n\n" +
                   "No schema incompatibilities found. New-only update rows and untouched official values remain in the output.";
+        if (preview.Notes.Count > 0)
+            DetailsText.Text += "\n\nUNCHANGED BASELINE TABLES ABSENT FROM THE UPDATE — skipped safely:\n" + string.Join("\n", preview.Notes);
         MergeButton.IsEnabled = preview.Warnings.Count == 0;
         SafetyText.Text = preview.Warnings.Count > 0 ? "No partial merge will be written." :
             "All inputs and the clean reference stay untouched; a new output is created.";

@@ -26,7 +26,10 @@ public static class StockDatabaseCatalog
     public static string? Find(string sqlitePath, IEnumerable<string>? references = null)
     {
         string version = Version(sqlitePath);
-        var matches = (references ?? References.Value).Where(p => Version(p) == version).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var game = GameDbIdentity.Detect(sqlitePath);
+        if (game == ForzaGame.Unknown) return null;
+        var matches = (references ?? References.Value).Where(p => Version(p) == version && GameDbIdentity.Detect(p) == game)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         if (matches.Count > 1)
             throw new InvalidDataException($"Multiple embedded clean references have stamp {version}. Choose an explicit clean baseline.");
         return matches.SingleOrDefault();

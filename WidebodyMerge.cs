@@ -36,6 +36,25 @@ public static partial class Merge
         ("List_UpgradeCarBodyWeight", "CarBodyId"),
     };
 
+    private static (string Table, string BodyColumn)[] CompatibleWidebodyPartTables(SqliteConnection con)
+    {
+        var main = TableNames(con, "main"); var donor = TableNames(con, "ov");
+        foreach (string table in new[] { "Data_Car", "Data_CarBody", "List_UpgradeCarBody", "List_UpgradeRearWing" })
+            if (!main.Contains(table) || !donor.Contains(table)) throw new InvalidDataException($"Missing required car/body table {table}.");
+        var parts = new List<(string, string)>();
+        foreach (var part in WidebodyPartTables)
+        {
+            bool modernOnly = part.Table.Contains("TireAspectRatio", StringComparison.Ordinal) || part.Table.Contains("TrackSpacing", StringComparison.Ordinal);
+            if (modernOnly && !main.Contains(part.Table) && !donor.Contains(part.Table)) continue;
+            if (!main.Contains(part.Table) || !donor.Contains(part.Table))
+                throw new InvalidDataException($"Incompatible or missing body-part table {part.Table}. Re-export from the same game's full GameDB.");
+            parts.Add(part);
+        }
+        if (main.Contains("UpgradePresetPackages") != donor.Contains("UpgradePresetPackages"))
+            throw new InvalidDataException("The base and donor disagree on the preset-package table. Re-export from the matching game.");
+        return parts.ToArray();
+    }
+
     public static WidebodyMergePreview PreviewWidebodyCars(string baseSqlite, string donorSqlite)
     {
         string basePath = Path.GetFullPath(baseSqlite), donorPath = Path.GetFullPath(donorSqlite);
@@ -43,16 +62,14 @@ public static partial class Merge
             throw new InvalidOperationException("Base and donor must be different database files.");
         if (!File.Exists(basePath) || !File.Exists(donorPath))
             throw new FileNotFoundException("The base or donor database was not found.");
+        GameDbIdentity.RequireSameGame(basePath, donorPath);
         string baseHash = FileHash(basePath), donorHash = FileHash(donorPath);
         var cars = new Dictionary<long, WidebodyMergeCar>();
         using var con = new SqliteConnection(new SqliteConnectionStringBuilder
         { DataSource = basePath, Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString());
         con.Open();
         Exec(con, $"ATTACH DATABASE '{SqlPath(donorPath)}' AS ov;");
-        var donorTables = TableNames(con, "ov");
-        if (!donorTables.Contains("Data_Car") || !donorTables.Contains("List_UpgradeCarBody") ||
-            WidebodyPartTables.Any(part => !donorTables.Contains(part.Table)))
-            throw new InvalidDataException("This donor is missing car/body tables. Re-export it with the updated Export Car Related DB, or choose a complete GameDB donor.");
+        var partTables = CompatibleWidebodyPartTables(con);
         using var cmd = con.CreateCommand();
         cmd.CommandText = @"SELECT d.Ordinal, COALESCE(c.MediaName, ''),
                                    SUM(CASE WHEN NOT EXISTS
@@ -75,7 +92,7 @@ public static partial class Merge
         // Stock-body options are independent of new kits. Include cars whose donor
         // adds body parts or fitment to the existing stock CarBodyID, even when the
         // donor has no additional widebody at all.
-        var stockQueries = WidebodyPartTables.Select(part =>
+        var stockQueries = partTables.Select(part =>
             $"SELECT s.Ordinal FROM ov.List_UpgradeCarBody s " +
             $"JOIN main.List_UpgradeCarBody b ON b.Ordinal=s.Ordinal AND b.IsStock=1 AND b.CarBodyID=s.CarBodyID " +
             $"JOIN ov.{Q(part.Table)} p ON p.{Q(part.BodyColumn)}=s.CarBodyID " +
@@ -136,6 +153,8 @@ public static partial class Merge
                 string versionInfo = MergeVersionInfo.Capture(con);
                 Exec(con, "PRAGMA foreign_keys=OFF;");
                 Exec(con, $"ATTACH DATABASE '{SqlPath(preview.DonorPath)}' AS ov;");
+                var partTables = CompatibleWidebodyPartTables(con);
+                bool hasPresets = TableNames(con, "ov").Contains("UpgradePresetPackages");
                 var previousForeignKeys = ForeignKeyIssues(con);
                 var columnsCache = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
                 using (var tx = con.BeginTransaction())
@@ -175,7 +194,7 @@ public static partial class Merge
                         if (reader.Read()) throw new InvalidDataException("This car has multiple stock CarBodyIDs; import manually.");
                     }
                     int stockOptions = 0;
-                    foreach (var (table, bodyColumn) in WidebodyPartTables)
+                    foreach (var (table, bodyColumn) in partTables)
                     {
                         var ids = ReadStockOptionIds(con, tx, table, bodyColumn, stockBodyId, overrideConflicts);
                         foreach (long id in ids)
@@ -183,11 +202,11 @@ public static partial class Merge
                                                       required: true, overrideConflicts);
                     }
                     written += stockOptions;
-                    var stockPresets = ReadIds(con, tx,
+                    var stockPresets = hasPresets ? ReadIds(con, tx,
                         "SELECT p.Id FROM ov.UpgradePresetPackages p WHERE p.Ordinal=$car AND p.CarBody=$kit " +
                         "AND ($override=1 OR NOT EXISTS " +
                         "(SELECT 1 FROM main.UpgradePresetPackages b WHERE b.Id=p.Id)) ORDER BY p.Id",
-                        carId, stockPartId, overrideConflicts ? 1 : 0);
+                        carId, stockPartId, overrideConflicts ? 1 : 0) : new List<long>();
                     foreach (long id in stockPresets)
                         written += CopyIdRow(con, tx, columnsCache, "UpgradePresetPackages", "Id", id,
                                              required: true, overrideConflicts);
@@ -207,7 +226,7 @@ public static partial class Merge
                         written += CopyIdRow(con, tx, columnsCache, "Data_CarBody_DummyAxle", "Id", bodyId, overrideConflicts: overrideConflicts);
                         written += CopyIdRow(con, tx, columnsCache, "List_UpgradeCarBody", "Id", partId, required: true, overrideConflicts);
 
-                        foreach (var (table, bodyColumn) in WidebodyPartTables)
+                        foreach (var (table, bodyColumn) in partTables)
                         {
                             var ids = ReadIds(con, tx, $"SELECT Id FROM ov.{Q(table)} WHERE {Q(bodyColumn)}=$v ORDER BY Id", bodyId);
                             if (ids.Count == 0)
@@ -215,13 +234,13 @@ public static partial class Merge
                             foreach (long id in ids) written += CopyIdRow(con, tx, columnsCache, table, "Id", id, required: true, overrideConflicts);
                         }
 
-                        var presets = ReadIds(con, tx,
+                        var presets = hasPresets ? ReadIds(con, tx,
                             "SELECT Id FROM ov.UpgradePresetPackages WHERE Ordinal=$car AND CarBody=$kit ORDER BY Id",
-                            carId, partId);
+                            carId, partId) : new List<long>();
                         foreach (long id in presets)
                             written += CopyIdRow(con, tx, columnsCache, "UpgradePresetPackages", "Id", id, required: true, overrideConflicts);
                         written += CopyCarPartPositions(con, tx, carId, bodyId, overrideConflicts);
-                        log?.Invoke($"CarBodyID {bodyId}: imported kit, body data, 12 part categories, " +
+                        log?.Invoke($"CarBodyID {bodyId}: imported kit, body data, {partTables.Length} part categories, " +
                                     $"{presets.Count} preset(s).");
                     }
 
