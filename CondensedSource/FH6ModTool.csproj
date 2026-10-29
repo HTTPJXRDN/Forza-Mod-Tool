@@ -1,0 +1,73 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>FH6ModStudio</AssemblyName>
+    <RootNamespace>FH6LocalCryptoTool</RootNamespace>
+    <Product>Forza Mod Tool</Product>
+    <Title>Forza Mod Tool</Title>
+    <Description>Database, car, animation and save tools for supported Forza games.</Description>
+    <Version>1.3.0</Version>
+    <FileVersion>1.3.0.0</FileVersion>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\ICO\dbtool_icon.ico</ApplicationIcon>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <PublishSingleFile>true</PublishSingleFile>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebugType Condition="'$(Configuration)' == 'Release'">none</DebugType>
+    <DebugSymbols Condition="'$(Configuration)' == 'Release'">false</DebugSymbols>
+    <ProfileUnlockTesting Condition="'$(ProfileUnlockTesting)' == ''">true</ProfileUnlockTesting>
+    <DefineConstants Condition="'$(ProfileUnlockTesting)' == 'true'">$(DefineConstants);PROFILE_UNLOCK_TESTING</DefineConstants>
+    <DefineConstants>$(DefineConstants);PUBLIC_CRYPTO_RUNTIME</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.8" />
+    <PackageReference Include="BCnEncoder.Net" Version="2.3.0" />
+    <Compile Remove="CryptoRuntime\**\*.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="Assets\Native\XCOMPRESS-PROVENANCE.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" TargetPath="XCOMPRESS-PROVENANCE.md" ExcludeFromSingleFile="true" />
+    <Content Include="AnimationSwap\AclTools\forzatech_acl.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" TargetPath="forzatech_acl.dll" />
+    <Content Include="AnimationSwap\AclTools\acl_compressor.exe" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" TargetPath="acl_compressor.exe" />
+    <Content Include="AnimationSwap\AclTools\LICENSE-ACL.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" TargetPath="licenses\LICENSE-ACL.txt" />
+    <Content Include="AnimationSwap\AclTools\LICENSE-RTM.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" TargetPath="licenses\LICENSE-RTM.txt" />
+    <Content Include="AnimationSwap\AclTools\LICENSE-SJSON.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" TargetPath="licenses\LICENSE-SJSON.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Resource Include="Assets\ICO\dbtool_icon.ico" />
+    <Resource Include="Assets\Logo\FMLogo_trim.png" />
+    <Resource Include="Assets\Logo\dbtool_icon.png" />
+    <Resource Include="Assets\Logo\db_plain.png" />
+    <EmbeddedResource Include="Assets\Reference\gamedbRC.stock.sqlite.gz" LogicalName="FH6LocalCryptoTool.gamedbRC.stock.sqlite.gz" />
+    <EmbeddedResource Include="Assets\Reference\gamedbRC.stock.*.sqlite.gz" LogicalName="FH6LocalCryptoTool.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="AnimationSwap\donor_library.json" />
+    <EmbeddedResource Include="AnimationSwap\stock_baseline.json" />
+    <EmbeddedResource Include="Assets\Reference\TrackLabels\*.str.gz" LogicalName="FH6LocalCryptoTool.TrackLabels.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Assets\Reference\Thumbnails\*.map.gz" LogicalName="FH6LocalCryptoTool.Thumbnails.%(Filename)%(Extension)" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="Help\*.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <EmbeddedResource Include="Help\*.txt" LogicalName="FH6LocalCryptoTool.Help.%(Filename)%(Extension)" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="FH6LocalCrypto.Runtime">
+      <HintPath>lib\FH6LocalCrypto.Runtime.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Content Include="LICENSE-BCnEncoder.NET.txt" TargetPath="licenses\LICENSE-BCnEncoder.NET.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <Content Include="LICENSE-CommunityToolkit.HighPerformance.txt" TargetPath="licenses\LICENSE-CommunityToolkit.HighPerformance.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <Content Include="LICENSE-DOTNET.txt" TargetPath="licenses\LICENSE-DOTNET.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <Content Include="LICENSE-Microsoft.Data.Sqlite.txt" TargetPath="licenses\LICENSE-Microsoft.Data.Sqlite.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <Content Include="LICENSE-Obfuscar.txt" TargetPath="licenses\LICENSE-Obfuscar.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <Content Include="LICENSE-SQLitePCLRaw.txt" TargetPath="licenses\LICENSE-SQLitePCLRaw.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <Content Include="LICENSE-WPF.txt" TargetPath="licenses\LICENSE-WPF.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <Content Include="SQLITE-PUBLIC-DOMAIN.txt" TargetPath="licenses\SQLITE-PUBLIC-DOMAIN.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <Content Include="THIRD-PARTY-NOTICES-DOTNET.txt" TargetPath="licenses\THIRD-PARTY-NOTICES-DOTNET.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <Content Include="THIRD-PARTY-NOTICES-WPF.txt" TargetPath="licenses\THIRD-PARTY-NOTICES-WPF.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <Content Include="THIRD_PARTY_NOTICES.md" TargetPath="licenses\THIRD_PARTY_NOTICES.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <Content Include="NATIVE_RUNTIME.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+  </ItemGroup>
+</Project>
