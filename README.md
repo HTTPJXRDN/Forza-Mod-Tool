@@ -38,7 +38,7 @@ Edit supported files from **FH2, FH5, FH6 and Forza Motorsport (FM8)**. Profile 
 
 1. Download the **app ZIP** from Releases, not a Source or GitHub upload ZIP.
 2. Extract the whole ZIP into a normal folder.
-3. Run **FH6ModStudio.exe**. Keep the included DLLs, animation helpers, `Help` and `licenses` folders beside it.
+3. Run **FH6ModStudio.exe**. Keep the included DLLs, animation helpers and `licenses` folder beside it. The **?** help is built in; an external `Help` folder is optional.
 
 The app EXE runs on Windows 10/11 x64 without a separate .NET installation. The ZIP is a normal archive, not password-encrypted.
 
@@ -121,12 +121,25 @@ FH5 uses the same `MediaPC\stripped` installation pattern through your existing 
 
 - **Track width (FH5/FH6):** enter mm per side. `20` means 20 mm each side; the DB stores `0.040` metres total. The wider step defaults to 5 mm, and **Step (mm)** changes the increment. Reapply Track offset without new steps to repair old size names, including batches. Install any exported `stringtables` folder under the game's `MediaPC\stripped`; correct existing tables are reused.
 - **Car bucket:** choose the category name, then **Set bucket**.
+- **Reset fitment to stock:** removes non-stock rim sizes for the whole car, plus non-stock tire widths, profiles and track widths for the selected body. Stock rows are kept. Supports batches.
 - **Engine names:** **Label stock engines** uses car name - engine name. Generic engines keep their names. Labels are shared by every car using that engine.
 - **Restore selected car:** restores the car's own DB records, including DB Browser edits. Added swap links are removed; engine names and shared parts stay intact. Check the log for shared items kept.
 - **Thumbnails:** Auto-find supports FH2/FH5/FH6, or choose a folder/ZIP. Sources are remembered per game. FM8 needs extracted supported images.
 - FH2 tire profile and track width remain visible but disabled; use the separate FH2 wheel mod. Added-widebody base tracks use metres.
 
 Test with a fresh Autoshow copy of the edited car. An old garage instance can retain incompatible upgrade references.
+
+#### Track-width labels and string tables (FH5/FH6)
+
+Leave **Export string tables** checked to include any missing size labels. The tool reads your installed tables, keeps custom strings and reuses labels that are already correct. These tables are shared across cars.
+
+- **Auto:** reads `MediaPC\stripped\stringtables` overrides first, then the stock tables in `media\stripped\stringtables`. A missing MediaPC stringtables folder is normal.
+- **Choose a folder:** click **String tables: Auto…** and select the `stringtables` folder containing language ZIPs or folders such as `EN\Upgrades.str`. **Auto** restores detection. The choice is kept per game for the current session.
+- **DB-only export:** uncheck **Export string tables** to skip reading and generating them. All DB edits are kept. New sizes still need matching installed labels to show their names in-game.
+
+Generated files are placed beside the exported DB as `mediapc\stripped\stringtables\<language>\Upgrades.str`. Back up your existing overrides, then copy that `stringtables` folder into the game's `MediaPC\stripped`. Leave the stock files under `media` untouched. Stock language ZIPs such as `EN.zip` are supported; generated overrides are loose files.
+
+If export reports **Central Directory corrupt** or another string-table read error, check the file path in the log. A ZIP being present is normal; an unreadable ZIP needs checking. Choose a valid folder or use DB-only export to keep your edits while sorting it out. See the [string-table instructions](CondensedSource/docs/ADVANCED_GUIDE.md#track-width-labels-and-string-tables) for details.
 
 ### Profile Editor: balances, unlocks and Journal
 

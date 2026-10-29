@@ -568,9 +568,41 @@ Single-car mode keeps the prefilled absolute boxes and also provides the same re
 
 To repair older track-width names without adding widths, select one or several cars, check **Track offset**, leave new steps unqueued and Apply. Existing values can be edited after export/reload and applied again. Size labels are shared by axle/size, not per car.
 
+#### Track-width labels and string tables
+
 Full DB exports write any needed labels beside the exported DB under `mediapc\stripped\stringtables`. Back up your installed tables, then drag the `stringtables` folder into the game's `MediaPC\stripped`. The tool reads existing game tables and reuses correct labels; unchanged tables are not generated again. Larger sizes add missing labels without losing earlier names. Car-related exports stay DB-only; export the receiving full DB to generate its labels.
 
-**Reset fitment to stock (selected body)** removes non-stock tire-width, tire-profile, and track-offset options from the active body. It does not reset the shared rim-size list.
+**Export string tables**, below Export, is on by default for FH5/FH6. Uncheck it for DB-only SLT or SQLite output. This skips all string-table reads and writes and keeps the DB edits. New track-width sizes still need matching installed labels to show their names in-game.
+
+**String tables: Auto…** opens the folder picker. Choose the `stringtables` folder containing language ZIPs or language folders such as `EN\Upgrades.str`, not the `EN` folder itself. A custom selection uses that folder instead of searching other installs. **Auto** restores game-folder detection. Selections are kept separately for FH5 and FH6 during the current session.
+
+Auto uses this order for each language:
+
+1. `MediaPC\stripped\stringtables\<language>\Upgrades.str`
+2. `MediaPC\stripped\stringtables\<language>.zip`
+3. `media\stripped\stringtables\<language>\Upgrades.str`
+4. `media\stripped\stringtables\<language>.zip`
+
+The MediaPC stringtables folder does not need to exist. Auto can read the stock `media` tables and create the needed overrides beside your export. If no readable installation is found, the bundled clean tables allow offline export. Installed game files are never changed by export.
+
+For example:
+
+```text
+gamedbRC_modified.slt
+mediapc/
+  stripped/
+    stringtables/
+      EN/
+        Upgrades.str
+```
+
+Copy the generated `stringtables` folder into the game's `MediaPC\stripped` after backing up existing overrides. Keep the language folders and loose `Upgrades.str` files as generated. A valid stock `EN.zip` is supported as an input; it does not need extracting just for the tool to read it.
+
+If a required table cannot be read, the error names its file. An unused lower-priority ZIP does not block a valid loose override. **Central Directory corrupt** is a ZIP-read error; it does not by itself mean the database is corrupt. Check that ZIP, choose a valid folder, or turn off **Export string tables** to export the DB while investigating. This setting does not repair the unreadable file.
+
+#### Reset fitment
+
+**Reset fitment to stock** removes non-stock front/rear rim sizes for the whole car, plus non-stock tire-width, tire-profile and track-width options from the active body. Stock rows are kept. The fields refresh after resetting so old queued sizes cannot be reapplied. Batch reset uses each selected car's stock body.
 
 #### Multi-car batch fitment
 
