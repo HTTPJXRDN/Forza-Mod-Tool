@@ -102,7 +102,8 @@ public static class GameDbSqliteBridge
             throw new InvalidOperationException("The original .slt changed after it was loaded. Reload it before exporting or merging.");
     }
 
-    public static void EncryptSnapshot(string sqlitePath, string templateSlt, string outputSlt, bool allowMotorsport = false)
+    public static void EncryptSnapshot(string sqlitePath, string templateSlt, string outputSlt, bool allowMotorsport = false,
+        bool exportStringTables = true, string? stringTablesFolder = null)
     {
         sqlitePath = Path.GetFullPath(sqlitePath);
         templateSlt = Path.GetFullPath(templateSlt);
@@ -142,14 +143,14 @@ public static class GameDbSqliteBridge
         if (roundTrip.Length < sqlite.Length || !roundTrip.AsSpan(0, sqlite.Length).SequenceEqual(sqlite))
             throw new InvalidDataException("Encrypted output did not reproduce the edited SQLite database.");
 
-        using var labels = TrackSpacingLabelExport.Prepare(sqlitePath, outputSlt, templateSlt);
+        using var labels = exportStringTables ? TrackSpacingLabelExport.Prepare(sqlitePath, outputSlt, templateSlt, stringTablesFolder) : null;
         string partial = outputSlt + "." + Guid.NewGuid().ToString("N") + ".partial";
         try
         {
             File.WriteAllBytes(partial, encrypted);
-            labels.Publish();
+            labels?.Publish();
             File.Move(partial, outputSlt);
-            labels.Complete();
+            labels?.Complete();
         }
         finally
         {

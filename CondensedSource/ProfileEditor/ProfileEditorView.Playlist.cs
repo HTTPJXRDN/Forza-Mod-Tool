@@ -14,7 +14,7 @@ public partial class ProfileEditorView
 #if PROFILE_UNLOCK_TESTING
         if (!PlaylistPointsState.TryReadPlaylists(_container, out var playlists, out string reason) || playlists.Length == 0)
         {
-            OverviewPanel.Children.Add(Note(string.IsNullOrEmpty(reason) ? "No saved Playlists found." : reason));
+            OverviewPanel.Children.Add(Note(string.IsNullOrEmpty(reason) ? "No Playlists found." : reason));
             return false;
         }
         var controls = new WrapPanel { Margin = new Thickness(0, 8, 0, 4) };
@@ -26,13 +26,19 @@ public partial class ProfileEditorView
         picker.SelectedItem = playlists.SingleOrDefault(p => p.Series == _selectedPlaylist) ?? playlists[0];
         var complete = TestButton("CompletePlaylistButton", "Complete playlist", true);
         complete.Margin = new Thickness(0, 0, 0, 4);
+        var chooseData = TestButton("PlaylistGameDataButton", "Choose game data…", true);
+        chooseData.Margin = new Thickness(8, 0, 0, 4);
+        chooseData.ToolTip = "Select media\\ObjectModelGame.zip from your matching FH6 install.";
+        chooseData.Click += (_, _) => ChooseProfileGameData();
         var status = Note(""); status.Name = "PlaylistCompletionStatus";
         void Refresh()
         {
             if (picker.SelectedItem is not PlaylistPointsState.Playlist selected) return;
             _selectedPlaylist = selected.Series; complete.IsEnabled = selected.Supported;
+            chooseData.Visibility = selected.Supported ? Visibility.Collapsed : Visibility.Visible;
             status.Text = selected.Supported
-                ? "Complete all four seasons. Playlist History points update automatically; rewards stay unclaimed. Click Export save to write a separate file."
+                ? (selected.NeedsInitialization ? "Missing Playlist progress will be added. " : "")
+                    + "Complete all four seasons. Playlist History points update automatically; rewards stay unclaimed. Click Export save to write a separate file."
                 : selected.Reason;
         }
         picker.SelectionChanged += (_, _) => Refresh(); Refresh();
@@ -42,7 +48,8 @@ public partial class ProfileEditorView
             try
             {
                 if (!_confirmUnlockTest($"Complete Series {selected.Series} — all four seasons ({selected.Maximum:n0} points)? "
-                    + "This updates saved activities, score totals and Playlist History points. It does not claim rewards or create online records. Export a separate save and test in-game.")) return;
+                    + (selected.NeedsInitialization ? "Missing season and activity records will be created. " : "")
+                    + "This updates activities, score totals and Playlist History points. It does not claim rewards or create online records. Export a separate save and test in-game.")) return;
                 byte[] before = _container.Serialize();
                 if (!PlaylistPointsState.TryCompletePlaylist(_container, selected.Series, out var result, out string error)) throw new InvalidOperationException(error);
                 _hasUnlockTestEdits |= !before.AsSpan().SequenceEqual(_container.Serialize());
@@ -52,7 +59,7 @@ public partial class ProfileEditorView
             }
             catch (Exception ex) { Log("Playlist completion: " + ex.Message, "error"); }
         };
-        controls.Children.Add(picker); controls.Children.Add(complete);
+        controls.Children.Add(picker); controls.Children.Add(complete); controls.Children.Add(chooseData);
         OverviewPanel.Children.Add(controls); OverviewPanel.Children.Add(status); return true;
 #else
         OverviewPanel.Children.Add(Note("Playlist completion is unavailable in this build. Saved activity and rewards are preserved."));

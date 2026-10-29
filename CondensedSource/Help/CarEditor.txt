@@ -9,9 +9,12 @@ Switch to a different car, wait for the game to save, then close it. Back up you
 
 Fitment
 - Select Stock or the right Widebody tab before editing.
+- Reset fitment removes non-stock rim sizes for the whole car, plus widths, profiles and track widths for the selected body. Stock rows stay.
 - FH5/FH6 track width uses mm per side. Enter 20 for 20 mm on each side. The + step starts at 5 mm; Step (mm) changes it.
 - To repair old size labels, check Track offset and Apply without adding steps. This also works on multiple cars.
 - Install any exported stringtables folder in MediaPC\stripped. Keep a backup of existing string tables.
+- Uncheck Export string tables below Export for DB-only output. New sizes still need matching installed labels.
+- String tables: Auto lets you choose the stringtables folder. Auto restores game-folder detection.
 - Added-widebody base tracks use metres. Adding a kit does not add a body model.
 - FH2 tire profile and track width are disabled. Use the separate FH2 wheel mod.
 - FM direct offsets use mm. Their effect in-game is still unconfirmed.

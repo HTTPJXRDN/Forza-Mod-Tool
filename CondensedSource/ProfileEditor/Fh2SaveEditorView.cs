@@ -38,6 +38,7 @@ public sealed partial class Fh2SaveEditorView : UserControl, IDisposable
     {
         _garageMode = garageMode; _back = back;
         Background = Brush("#1D1D1F"); Foreground = Brush("#F4F4F6"); FontSize = 12;
+        UseLayoutRounding = true; SnapsToDevicePixels = true;
         Resources[SystemColors.HighlightBrushKey] = Brush("#A51A49");
         Resources[SystemColors.InactiveSelectionHighlightBrushKey] = Brush("#622B40");
         // Native disabled/header visuals otherwise turn white on some Windows themes.
@@ -57,8 +58,11 @@ public sealed partial class Fh2SaveEditorView : UserControl, IDisposable
         Resources[typeof(Button)] = buttonStyle;
         var root = new Grid(); root.RowDefinitions.Add(new() { Height = GridLength.Auto }); root.RowDefinitions.Add(new()); root.RowDefinitions.Add(new() { Height = GridLength.Auto });
         var header = new Border { Padding = new(20, 11, 20, 11), BorderBrush = Brush("#E8175D"), BorderThickness = new(0, 0, 0, 2), Background = new LinearGradientBrush(Color.FromRgb(58,58,63),Color.FromRgb(48,48,52),90) };
-        var dock = new DockPanel { MinHeight = 46 }; var buttons = new WrapPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right };
-        DockPanel.SetDock(buttons, Dock.Right); dock.Children.Add(buttons);
+        var headerGrid = new Grid { MinHeight = 46 };
+        headerGrid.ColumnDefinitions.Add(new()); headerGrid.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        headerGrid.RowDefinitions.Add(new() { Height = GridLength.Auto }); headerGrid.RowDefinitions.Add(new() { Height = GridLength.Auto });
+        var buttons = new WrapPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right };
+        Grid.SetColumn(buttons, 1); headerGrid.Children.Add(buttons);
         Add(buttons, "Load FH2 save…", async () => await ChooseAsync());
         buttons.Children.Add(_export); _export.Click += async (_, _) => await ExportAsync();
         buttons.Children.Add(_revert); _revert.Click += async (_, _) => { if (_session != null) await LoadRevisionAsync(_session.SourcePath); };
@@ -67,7 +71,14 @@ public sealed partial class Fh2SaveEditorView : UserControl, IDisposable
         var title = Text(garageMode ? "Garage Viewer · FH2" : "Profile Editor · FH2"); title.FontSize = 22; title.FontWeight = FontWeights.Bold; title.Foreground = Brush("#E8175D");
         var titleRow = new StackPanel { Orientation = Orientation.Horizontal }; titleRow.Children.Add(title);
         titleRow.Children.Add(new Help.TabHelpButton { Topic = garageMode ? "GarageViewer" : "ProfileEditor" });
-        heading.Children.Add(titleRow); heading.Children.Add(Text("Azimuth saves • private working copy")); dock.Children.Add(heading); header.Child = dock; root.Children.Add(header);
+        heading.Children.Add(titleRow); heading.Children.Add(Text("Azimuth saves • private working copy")); headerGrid.Children.Add(heading); header.Child = headerGrid; root.Children.Add(header);
+        headerGrid.SizeChanged += (_, e) =>
+        {
+            bool stacked = e.NewSize.Width < 720;
+            Grid.SetRow(buttons, stacked ? 1 : 0); Grid.SetColumn(buttons, stacked ? 0 : 1); Grid.SetColumnSpan(buttons, stacked ? 2 : 1);
+            buttons.HorizontalAlignment = stacked ? HorizontalAlignment.Left : HorizontalAlignment.Right;
+            buttons.Margin = stacked ? new Thickness(0, 6, 0, 0) : new Thickness(0);
+        };
         _actions.Children.Add(_body); Grid.SetRow(_actions, 1); _actions.Margin = new(18); root.Children.Add(_actions);
         var footer = new StackPanel { Margin = new(18, 0, 18, 12) }; footer.Children.Add(_path);
         footer.Children.Add(Text("Close FH2 and Azimuth, then back up your User save folder. Copy the exported commit and whole data folder into BOTH folders inside revisions. Keep their existing names; the revision numbers change. Replacing only one can stop the edited save loading."));
@@ -119,7 +130,8 @@ public sealed partial class Fh2SaveEditorView : UserControl, IDisposable
     void BuildProfile()
     {
         _body.Children.Clear(); _body.RowDefinitions.Clear(); _body.ColumnDefinitions.Clear();
-        var panel = new StackPanel(); var scroll = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }; _body.Children.Add(scroll);
+        var panel = new StackPanel(); Grid.SetIsSharedSizeScope(panel, true);
+        var scroll = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled }; _body.Children.Add(scroll);
         panel.Children.Add(Text("FH2 BALANCES"));
         ValueRow(panel, "Credits", _session!.Credits, v => _session.SetValue("Credits", v));
         ValueRow(panel, "Available skill points", _session.SkillTokens, v => _session.SetSkillTokens(v)).Name = "Fh2SkillPoints";
@@ -133,9 +145,10 @@ public sealed partial class Fh2SaveEditorView : UserControl, IDisposable
     }
     TextBox ValueRow(Panel panel, string name, uint value, Action<uint> setter, bool enabled = true)
     {
-        var row = new Grid { Margin = new(0, 5, 0, 5), MaxWidth = 850, HorizontalAlignment = HorizontalAlignment.Stretch, IsEnabled = enabled };
-        row.ColumnDefinitions.Add(new()); row.ColumnDefinitions.Add(new() { Width = new(200) }); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-        row.Children.Add(Text(name)); var box = Input(value.ToString(CultureInfo.InvariantCulture)); Grid.SetColumn(box, 1); row.Children.Add(box);
+        var row = new Grid { Margin = new(0, 5, 0, 5), HorizontalAlignment = HorizontalAlignment.Left, IsEnabled = enabled };
+        row.ColumnDefinitions.Add(new() { Width = GridLength.Auto, SharedSizeGroup = "Fh2ValueLabels" }); row.ColumnDefinitions.Add(new() { Width = new(200) }); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        var label = Text(name); label.VerticalAlignment = VerticalAlignment.Center; label.Margin = new(0, 0, 18, 0); row.Children.Add(label);
+        var box = Input(value.ToString(CultureInfo.InvariantCulture)); Grid.SetColumn(box, 1); row.Children.Add(box);
         var apply = Button("Apply"); Grid.SetColumn(apply, 2); row.Children.Add(apply);
         apply.Click += (_, _) => Apply(() => { if (!uint.TryParse(box.Text.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out uint entered)) throw new FormatException("Enter a whole number from 0 to 4294967295."); setter(entered); }); panel.Children.Add(row); return box;
     }
@@ -146,7 +159,12 @@ public sealed partial class Fh2SaveEditorView : UserControl, IDisposable
         if (restriction.Length != 0) { panel.Children.Add(Text($"Saved XP: {_session.Xp:N0} • stored level index: {_session.Level:N0}. " + restriction)); return; }
         var preview = Text(""); preview.Name = "Fh2XpPreview";
         var repair = Text(""); repair.Name = "Fh2XpCounterRepair";
-        void RefreshRepair() => repair.Text = _session.DriverXpNeedsCounterRepair ? "Apply XP to repair an earlier level counter." : "";
+        void RefreshRepair()
+        {
+            bool needed = _session.DriverXpNeedsCounterRepair;
+            repair.Text = needed ? "Apply XP to repair an earlier level counter." : "";
+            repair.Visibility = needed ? Visibility.Visible : Visibility.Collapsed;
+        }
         var xpBox = ValueRow(panel, "Driver XP", _session.Xp, v => { _session.SetDriverXp(v); RefreshRepair(); }); xpBox.Name = "Fh2XpInput";
         void PreviewXp()
         {

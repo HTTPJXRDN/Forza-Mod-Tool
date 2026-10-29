@@ -23,7 +23,7 @@ internal sealed class TrackSpacingLabelExport : IDisposable
         parent = Path.GetDirectoryName(Path.GetFullPath(database))!;
     }
 
-    internal static TrackSpacingLabelExport Prepare(string sqlite, string database, string? template = null)
+    internal static TrackSpacingLabelExport Prepare(string sqlite, string database, string? template = null, string? stringTablesFolder = null)
     {
         var package = new TrackSpacingLabelExport(database);
         try
@@ -35,7 +35,7 @@ internal sealed class TrackSpacingLabelExport : IDisposable
             if (game is not (ForzaGame.Horizon5 or ForzaGame.Horizon6)) return package;
             var strings = TrackSpacingLabels.RequiredStrings(db);
             if (strings.Count == 0) return package;
-            var baselines = Baselines(game, sqlite, template);
+            var baselines = Baselines(game, sqlite, template, stringTablesFolder);
             foreach (var (language, baseline) in baselines)
             {
                 var table = new UpgradeStringTable(baseline.Bytes);
@@ -54,7 +54,8 @@ internal sealed class TrackSpacingLabelExport : IDisposable
             }
             if (package.files.Count == 0) return package;
             var installedRoots = game == ForzaGame.Horizon6 ? ThumbnailInstallDiscovery.GameRoots(false) : ThumbnailInstallDiscovery.Horizon5GameRoots();
-            if (installedRoots.Any(root => Path.GetFullPath(Path.Combine(root, "mediapc", "stripped", "stringtables")).Equals(package.output, StringComparison.OrdinalIgnoreCase)))
+            if (installedRoots.Any(root => Path.GetFullPath(Path.Combine(root, "mediapc", "stripped", "stringtables")).Equals(package.output, StringComparison.OrdinalIgnoreCase)) ||
+                (stringTablesFolder != null && Path.GetFullPath(stringTablesFolder).TrimEnd(Path.DirectorySeparatorChar).Equals(package.output, StringComparison.OrdinalIgnoreCase)))
                 throw new IOException("Choose an export folder outside the installed game. Install the generated stringtables folder manually.");
             package.staging = Path.Combine(package.parent, ".track-width-" + Guid.NewGuid().ToString("N") + ".partial");
             Directory.CreateDirectory(package.staging);
@@ -130,7 +131,7 @@ internal sealed class TrackSpacingLabelExport : IDisposable
     }
 
     sealed record Baseline(byte[] Bytes, string Source);
-    static Dictionary<string, Baseline> Baselines(ForzaGame game, string sqlite, string? template)
+    static Dictionary<string, Baseline> Baselines(ForzaGame game, string sqlite, string? template, string? stringTablesFolder = null)
     {
         string gameCode = game == ForzaGame.Horizon6 ? "FH6" : "FH5";
         var baselines = new Dictionary<string, Baseline>(StringComparer.OrdinalIgnoreCase);
@@ -147,6 +148,15 @@ internal sealed class TrackSpacingLabelExport : IDisposable
         }
         if (baselines.Count == 0) throw new InvalidDataException("The bundled track-width string tables are missing.");
 
+        if (stringTablesFolder != null)
+        {
+            stringTablesFolder = Path.GetFullPath(stringTablesFolder);
+            ValidateFolder(stringTablesFolder);
+            if (OverlayFolder(stringTablesFolder, game, baselines, new(StringComparer.OrdinalIgnoreCase)) == 0)
+                throw new InvalidDataException("No Upgrades.str table was found in the selected stringtables folder: " + stringTablesFolder);
+            return baselines;
+        }
+
         var roots = new List<string>();
         foreach (string? file in new[] { template, sqlite })
         {
@@ -161,38 +171,83 @@ internal sealed class TrackSpacingLabelExport : IDisposable
                     string? sample = Directory.Exists(overrides) ? Directory.EnumerateDirectories(overrides)
                         .Select(d => Path.Combine(d, "Upgrades.str")).FirstOrDefault(File.Exists) : null;
                     if (sample != null && !Directory.Exists(Path.Combine(dir.FullName, "media", "stripped", "StringTables")) &&
-                        new UpgradeStringTable(ReadTable(sample)).Version != (game == ForzaGame.Horizon6 ? 0x800 : 0x400)) continue;
+                        new UpgradeStringTable(ReadInstalledTable(sample, null, archive: false)!.Bytes).Version != (game == ForzaGame.Horizon6 ? 0x800 : 0x400)) continue;
                     roots.Add(dir.FullName);
                 }
         }
         roots.AddRange(game == ForzaGame.Horizon6 ? ThumbnailInstallDiscovery.GameRoots(false) : ThumbnailInstallDiscovery.Horizon5GameRoots());
         string? root = roots.Distinct(StringComparer.OrdinalIgnoreCase).FirstOrDefault(UsableRoot);
         if (root == null) return baselines;
-        foreach (string media in new[] { "media", "MediaPC" })
+        // Resolve the same precedence as the game before opening files. A
+        // loose override makes the corresponding lower-priority ZIP unused.
+        var resolved = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (string media in new[] { "MediaPC", "media" })
         {
             string folder = Path.Combine(root, media, "stripped", "StringTables");
             if (!Directory.Exists(folder)) continue;
-            foreach (string zipPath in Directory.EnumerateFiles(folder, "*.zip"))
-            {
-                string lang = Path.GetFileNameWithoutExtension(zipPath);
-                if (!ValidLanguage(lang)) continue;
-                using var zip = ZipFile.OpenRead(zipPath);
-                var entries = zip.Entries.Where(e => e.FullName.Replace('\\', '/').Split('/').Last().Equals("Upgrades.str", StringComparison.OrdinalIgnoreCase)).ToArray();
-                if (entries.Length == 0) continue;
-                if (entries.Length != 1 || entries[0].Length > 16 * 1024 * 1024) throw new InvalidDataException("Invalid Upgrades.str archive: " + zipPath);
-                using var stream = entries[0].Open(); using var bytes = new MemoryStream(); stream.CopyTo(bytes);
-                baselines[lang] = new(bytes.ToArray(), zipPath + " / " + entries[0].FullName);
-            }
-            foreach (string directory in Directory.EnumerateDirectories(folder))
-            {
-                string lang = Path.GetFileName(directory), file = Path.Combine(directory, "Upgrades.str");
-                if (!ValidLanguage(lang) || !File.Exists(file)) continue;
-                if (new FileInfo(file).Length > 16 * 1024 * 1024) throw new InvalidDataException("Upgrades.str is too large: " + file);
-                baselines[lang] = new(File.ReadAllBytes(file), file);
-            }
+            OverlayFolder(folder, game, baselines, resolved);
         }
         return baselines;
     }
+
+    internal static void ValidateFolder(string folder)
+    {
+        if (!Directory.Exists(folder)) throw new DirectoryNotFoundException("String-table folder not found: " + folder);
+        if (!Directory.EnumerateFiles(folder, "*.zip").Any(p => ValidLanguage(Path.GetFileNameWithoutExtension(p))) &&
+            !Directory.EnumerateDirectories(folder).Any(d => ValidLanguage(Path.GetFileName(d)) && File.Exists(Path.Combine(d, "Upgrades.str"))))
+            throw new InvalidDataException("Choose the stringtables folder containing language ZIPs or language folders, such as EN\\Upgrades.str: " + folder);
+    }
+
+    static int OverlayFolder(string folder, ForzaGame game, Dictionary<string, Baseline> baselines, HashSet<string> resolved)
+    {
+        int added = 0;
+        foreach (string directory in Directory.EnumerateDirectories(folder))
+        {
+            string lang = Path.GetFileName(directory), file = Path.Combine(directory, "Upgrades.str");
+            if (!ValidLanguage(lang) || resolved.Contains(lang) || !File.Exists(file)) continue;
+            baselines[lang] = ReadInstalledTable(file, game, archive: false)!;
+            resolved.Add(lang); added++;
+        }
+        foreach (string zipPath in Directory.EnumerateFiles(folder, "*.zip"))
+        {
+            string lang = Path.GetFileNameWithoutExtension(zipPath);
+            if (!ValidLanguage(lang) || resolved.Contains(lang)) continue;
+            if (ReadInstalledTable(zipPath, game, archive: true) is not Baseline table) continue;
+            baselines[lang] = table;
+            resolved.Add(lang); added++;
+        }
+        return added;
+    }
+
+    static Baseline? ReadInstalledTable(string path, ForzaGame? game, bool archive)
+    {
+        try
+        {
+            byte[] bytes;
+            string source = path;
+            if (archive)
+            {
+                using var zip = ZipFile.OpenRead(path);
+                var entries = zip.Entries.Where(e => e.FullName.Replace('\\', '/').Split('/').Last().Equals("Upgrades.str", StringComparison.OrdinalIgnoreCase)).ToArray();
+                if (entries.Length == 0) return null;
+                if (entries.Length != 1 || entries[0].Length > 16 * 1024 * 1024)
+                    throw new InvalidDataException("Expected one Upgrades.str entry, no larger than 16 MB.");
+                using var stream = entries[0].Open(); using var data = new MemoryStream(); stream.CopyTo(data);
+                bytes = data.ToArray();
+                source += " / " + entries[0].FullName;
+            }
+            else bytes = ReadTable(path);
+            var table = new UpgradeStringTable(bytes);
+            if (game != null && table.Version != (game == ForzaGame.Horizon6 ? 0x800 : 0x400))
+                throw new InvalidDataException("Upgrades.str belongs to a different game.");
+            return new(bytes, source);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+        {
+            throw new InvalidDataException("Cannot read string table" + (archive ? " ZIP" : "") + " \"" + path + "\": " + ex.Message, ex);
+        }
+    }
+
     static bool UsableRoot(string root)
     {
         // Xbox placeholders can look installed while their files cannot be
@@ -205,6 +260,8 @@ internal sealed class TrackSpacingLabelExport : IDisposable
         string native = Path.Combine(root, "media", "stripped", "StringTables");
         try
         {
+            if (Directory.Exists(native) && Directory.EnumerateDirectories(native).Any(d =>
+                ValidLanguage(Path.GetFileName(d)) && File.Exists(Path.Combine(d, "Upgrades.str")))) return true;
             string[] archives = Directory.Exists(native) ? Directory.GetFiles(native, "*.zip").Where(p => ValidLanguage(Path.GetFileNameWithoutExtension(p))).ToArray() : [];
             if (archives.Length == 0)
             {

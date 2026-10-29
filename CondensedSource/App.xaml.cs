@@ -6,6 +6,11 @@ public partial class App : Application
 {
     protected override void OnStartup(StartupEventArgs e)
     {
+        if (e.Args.Length > 0 && e.Args[0] == "--apply-update")
+        {
+            Shutdown(e.Args.Length == 2 ? ReleaseUpdateInstaller.RunHelper(e.Args[1]) : 1);
+            return;
+        }
         try { TempWorkspace.Initialize(); }
         catch (Exception ex) {
             MessageBox.Show("The Windows temporary folder could not be used for the tool's working files. Check its permissions and available space.\n\n" + ex.Message, "Forza Mod Tool", MessageBoxButton.OK, MessageBoxImage.Error);

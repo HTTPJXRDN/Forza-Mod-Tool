@@ -236,6 +236,12 @@
                                 </Grid.ColumnDefinitions>
                                 <ContentPresenter Grid.Column="0" Content="{Binding SelectionBoxItem,
                                         RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                        ContentTemplate="{Binding SelectionBoxItemTemplate,
+                                            RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                        ContentTemplateSelector="{Binding ItemTemplateSelector,
+                                            RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                        ContentStringFormat="{Binding SelectionBoxItemStringFormat,
+                                            RelativeSource={RelativeSource AncestorType=ComboBox}}"
                                         TextElement.Foreground="{StaticResource Ink}"
                                         Margin="12,0,0,0" VerticalAlignment="Center"/>
                                 <Viewbox Grid.Column="1" Width="14" Height="14" Margin="0,0,12,0">
@@ -490,6 +496,7 @@
           <Grid KeyboardNavigation.TabNavigation="Local">
             <Grid.RowDefinitions>
               <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
               <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
             <Grid Grid.Row="0">
@@ -501,9 +508,12 @@
               <!-- Reserve header space so neither the version nor support icon covers tabs. -->
               <StackPanel x:Name="VersionSupportHeader" Grid.Column="1" Orientation="Horizontal"
                           VerticalAlignment="Top" Height="32" Margin="8,0,9,0">
-                <TextBlock x:Name="VersionLabel" Text="V1.3.0" VerticalAlignment="Center"
+                <TextBlock x:Name="VersionLabel" Text="{Binding AppVersionLabel, RelativeSource={RelativeSource AncestorType=Window}}" VerticalAlignment="Center"
                            Foreground="{StaticResource Faint}" FontSize="10.5" FontWeight="SemiBold"
                            Margin="0,0,5,0" IsHitTestVisible="False"/>
+                <Button x:Name="CheckUpdatesButton" Content="Check for updates" Click="CheckUpdatesButton_Click"
+                        Style="{StaticResource PinkButton}" Height="26" MinWidth="108" FontSize="10.5" Padding="8,3" Margin="3,0,5,0"
+                        ToolTip="Check GitHub for a newer release" AutomationProperties.Name="Check for updates"/>
                 <Button x:Name="SupportButton" Style="{StaticResource SupportIconButton}"
                         ToolTip="Buy me an ENERGY DRINK" ToolTipService.InitialShowDelay="250"
                         ToolTipService.ShowDuration="8000" AutomationProperties.Name="Buy me an energy drink"
@@ -529,7 +539,16 @@
                 </Button>
               </StackPanel>
             </Grid>
-            <ContentPresenter x:Name="PART_SelectedContentHost" Grid.Row="1" ContentSource="SelectedContent"
+            <Border x:Name="UpdateNotice" Grid.Row="1" Visibility="Collapsed" Background="{StaticResource Card2}"
+                    BorderBrush="{StaticResource Hairline}" BorderThickness="0,0,0,1" Padding="12,7">
+              <StackPanel>
+                <TextBlock x:Name="UpdateStatus" FontSize="12" Foreground="{StaticResource Dim}" TextWrapping="Wrap"/>
+                <TextBlock x:Name="UpdateDownloadText" Visibility="Collapsed" Margin="0,3,0,0" FontSize="12" FontWeight="SemiBold">
+                  <Hyperlink x:Name="UpdateDownloadLink" Foreground="{StaticResource Pink}" Cursor="Hand" Click="UpdateDownload_Click">Download update now</Hyperlink>
+                </TextBlock>
+              </StackPanel>
+            </Border>
+            <ContentPresenter x:Name="PART_SelectedContentHost" Grid.Row="2" ContentSource="SelectedContent"
                               Margin="{TemplateBinding Padding}" SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
           </Grid>
         </ControlTemplate>

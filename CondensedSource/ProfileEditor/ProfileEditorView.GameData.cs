@@ -18,14 +18,15 @@ public partial class ProfileEditorView
         var status = Note(data.Loaded ? "Game data detected. New compatible content is checked when you load a save." : data.Message);
         status.Name = "ProfileGameDataStatus"; status.ToolTip = data.Source + "\n" + data.Message;
         OverviewPanel.Children.Add(status); OverviewPanel.Children.Add(button);
-        button.Click += (_, _) =>
-        {
-            var dialog = new OpenFileDialog { Title = "Select media\\ObjectModelGame.zip from your matching FH6 install", Filter = "FH6 game definitions (ObjectModelGame.zip)|ObjectModelGame.zip" };
-            if (dialog.ShowDialog() != true) return;
-            var result = ProfileGameData.Attach(_container, dialog.FileName, remember: true); Log(result.Message, result.Loaded ? "ok" : "err");
-            foreach (string warning in ProfileGameData.Warnings(_container)) Log(warning, "info");
-            BuildOverview();
-        };
+        button.Click += (_, _) => ChooseProfileGameData();
+    }
+    void ChooseProfileGameData()
+    {
+        var dialog = new OpenFileDialog { Title = "Select media\\ObjectModelGame.zip from your matching FH6 install", Filter = "FH6 game definitions (ObjectModelGame.zip)|ObjectModelGame.zip" };
+        if (dialog.ShowDialog() != true) return;
+        var result = ProfileGameData.Attach(_container, dialog.FileName, remember: true); Log(result.Message, result.Loaded ? "ok" : "err");
+        foreach (string warning in ProfileGameData.Warnings(_container)) Log(warning, "info");
+        BuildOverview();
     }
     int AddOnlineXpControls()
     {

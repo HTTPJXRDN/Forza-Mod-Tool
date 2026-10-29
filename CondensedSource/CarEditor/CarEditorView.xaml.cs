@@ -376,6 +376,37 @@ public partial class CarEditorView : UserControl
     void LoadDb_Click(object s, RoutedEventArgs e) => LoadDb();
     void Reload_Click(object s, RoutedEventArgs e) => ReloadOriginal();
     void Export_Click(object s, RoutedEventArgs e) => ExportDb();
+    readonly Dictionary<ForzaGame, string> _stringTableFolders = new();
+    string SelectedStringTableFolder => _stringTableFolders.GetValueOrDefault(_editorGame);
+
+    void ChooseStringTableFolder_Click(object s, RoutedEventArgs e)
+    {
+        var dialog = new OpenFolderDialog { Title = "Choose the stringtables folder (language ZIPs or language folders)" };
+        if (SelectedStringTableFolder is string current && Directory.Exists(current)) dialog.InitialDirectory = current;
+        if (dialog.ShowDialog() != true) return;
+        try { SelectStringTableFolder(dialog.FolderName); }
+        catch (Exception ex) { Log("string-table folder: " + ex.Message, "err"); }
+    }
+    internal void SelectStringTableFolder(string folder)
+    {
+        folder = Path.GetFullPath(folder);
+        TrackSpacingLabelExport.ValidateFolder(folder);
+        _stringTableFolders[_editorGame] = folder;
+        RefreshStringTableExportOptions();
+    }
+    void AutoStringTableFolder_Click(object s, RoutedEventArgs e)
+    {
+        _stringTableFolders.Remove(_editorGame);
+        RefreshStringTableExportOptions();
+    }
+    void RefreshStringTableExportOptions()
+    {
+        StringTableExportOptions.Visibility = IsFh5 || IsFh6 ? Visibility.Visible : Visibility.Collapsed;
+        string selected = SelectedStringTableFolder;
+        StringTableFolderBtn.Content = selected == null ? "String tables: Auto…" : "String tables: Custom…";
+        StringTableFolderBtn.ToolTip = selected ?? "Choose a stringtables folder containing language ZIPs or language folders. Auto uses the detected game files.";
+        StringTableAutoBtn.Visibility = selected == null ? Visibility.Collapsed : Visibility.Visible;
+    }
     void SetStock_Click(object s, RoutedEventArgs e)
     {
         if (MotorMode)
@@ -1012,6 +1043,7 @@ public partial class CarEditorView : UserControl
 
     void ResetLoadedDatabaseUi()
     {
+        StringTableExportOptions.Visibility = Visibility.Collapsed;
         _car = null;
         _powerTargetCarId = null;
         _batchRunning = false;
@@ -1103,6 +1135,7 @@ public partial class CarEditorView : UserControl
         OptAspect.IsEnabled = SWBoxes.IsEnabled = AddSWBtn.IsEnabled = HasProfileOffsets;
         OptTrack.IsEnabled = OFBoxes.IsEnabled = ORBoxes.IsEnabled = AddOFBtn.IsEnabled = AddORBtn.IsEnabled = HasTrackOffsets;
         TrackStepSizeBox.IsEnabled = HasTrackOffsets;
+        RefreshStringTableExportOptions();
         if (!HasProfileOffsets) OptAspect.IsChecked = false;
         if (!HasTrackOffsets) OptTrack.IsChecked = false;
         OptAspect.ToolTip = IsFh2 ? "Not supported in FH2. Use the separate FH2 wheel mod." : HasProfileOffsets ? null : "This database has no tire-profile upgrade tables.";
@@ -1183,8 +1216,10 @@ public partial class CarEditorView : UserControl
             }
             ExportDatabase(destinationPath, template);
             Log("⬇ exported " + Path.GetFileName(d.FileName), "ok");
-            if (Directory.Exists(TrackSpacingLabelExport.Folder(destinationPath)))
+            if (ExportTrackLabels.IsChecked == true && Directory.Exists(TrackSpacingLabelExport.Folder(destinationPath)))
                 Log("Track-width labels: drag " + TrackSpacingLabelExport.Folder(destinationPath) + " into your game's mediapc\\stripped folder.", "warn");
+            else if ((IsFh5 || IsFh6) && ExportTrackLabels.IsChecked != true)
+                Log("String tables skipped. New track-width sizes need matching installed labels to show their names in-game.", "info");
         }
         catch (InvalidOperationException ex) { Log("export cancelled: " + ex.Message, "warn"); }
         catch (Exception ex) { Log("export failed: " + ex.Message, "err"); }
@@ -1221,13 +1256,15 @@ public partial class CarEditorView : UserControl
             _conn.BackupDatabase(destination);
             destination.Close();
             if (GameDbSqliteBridge.IsSlt(destinationPath))
-                GameDbSqliteBridge.EncryptSnapshot(tempExport, templateSlt, destinationPath);
+                GameDbSqliteBridge.EncryptSnapshot(tempExport, templateSlt, destinationPath,
+                    exportStringTables: ExportTrackLabels.IsChecked == true, stringTablesFolder: SelectedStringTableFolder);
             else
             {
-                using var labels = TrackSpacingLabelExport.Prepare(tempExport, destinationPath, _origPath);
-                labels.Publish();
+                using var labels = ExportTrackLabels.IsChecked == true
+                    ? TrackSpacingLabelExport.Prepare(tempExport, destinationPath, _origPath, SelectedStringTableFolder) : null;
+                labels?.Publish();
                 File.Move(tempExport, destinationPath, true);
-                labels.Complete();
+                labels?.Complete();
             }
         }
         finally
@@ -2921,31 +2958,44 @@ public partial class CarEditorView : UserControl
                                 ) ORDER BY v", "0", carId, boxCount);
         AddSingleCarRimStepButtons();
     }
-    void ResetFitment_Click(object s, RoutedEventArgs e) => _ = RunForSelectedCars("reset stock-body fitment", ResetCurrentFitment);
+    void ResetFitment_Click(object s, RoutedEventArgs e) => _ = RunForSelectedCars("reset fitment to stock", ResetCurrentFitment, groupWrites: true);
 
     void ResetCurrentFitment()
     {
         if (_car == null) { Log("pick a car first", "warn"); return; }
         var bodies = SelectedBodies();
+        const string savepoint = "reset_car_fitment";
+        bool opened = false;
         try
         {
+            Exec("SAVEPOINT " + savepoint); opened = true;
+            // Rim sizes belong to the whole car, while the other fitment rows
+            // belong to the selected stock/widebody. Keep every stock row.
+            foreach (var table in new[] { "List_UpgradeRimSizeFront", "List_UpgradeRimSizeRear" })
+                if (_schema.ContainsKey(table)) Exec($"DELETE FROM \"{table}\" WHERE Ordinal=? AND IsStock=0", _car.Id);
             foreach (var bd in bodies)
                 foreach (var t in new[] {
                     "List_UpgradeCarBodyTireWidthFront","List_UpgradeCarBodyTireWidthRear",
                     "List_UpgradeCarBodyTireAspectRatioFront","List_UpgradeCarBodyTireAspectRatioRear",
                     "List_UpgradeCarBodyTrackSpacingFront","List_UpgradeCarBodyTrackSpacingRear" })
                     if (_schema.ContainsKey(t)) Exec($"DELETE FROM \"{t}\" WHERE CarBodyId=? AND IsStock=0", bd);
-            MarkModified(_car.Id);
             if (HasNativeTrackOffsets)
             {
                 Exec("DELETE FROM CarTrackOffsets WHERE Id=?", _car.Id);
                 if (_loadedNativeTrackOffsets.TryGetValue(_car.Id, out var originalTrack)) InsertClonedRow("CarTrackOffsets", originalTrack);
                 Log("direct track offsets restored to their loaded values", "info");
             }
-            Log($"↺ fitment reset to stock on {bodies.Length} body/bodies", "ok");
+            Exec("RELEASE " + savepoint); opened = false;
+            MarkModified(_car.Id);
+            Log($"↺ fitment reset: non-stock rim sizes removed for this car; widths, profiles and tracks reset on {bodies.Length} body/bodies", "ok");
+            if (!_batchRunning) FillRims(_car.Id);
             FillFitment();
         }
-        catch (Exception ex) { Log("reset failed: " + ex.Message, "err"); }
+        catch
+        {
+            if (opened) { Exec("ROLLBACK TO " + savepoint); Exec("RELEASE " + savepoint); }
+            throw;
+        }
     }
 
     HashSet<long> UsedEngines() => Query("SELECT EngineID FROM List_UpgradeEngine WHERE Ordinal=?", _car.Id).Select(r => Convert.ToInt64(r["EngineID"])).ToHashSet();

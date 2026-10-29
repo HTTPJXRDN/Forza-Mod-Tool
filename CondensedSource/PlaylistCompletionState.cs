@@ -10,6 +10,7 @@ public static partial class PlaylistPointsState
     public sealed record Playlist(uint Series, string Name, int Points, int Maximum, bool Supported, string Reason)
     {
         public string Display => $"Series {Series} · {Name} ({Points:n0}/{Maximum:n0})";
+        public bool NeedsInitialization { get; init; }
     }
     public sealed record Completion(uint Series, int Activities, int Steps, int Points, int HistoryPointsAdded = 0, int HistoryPoints = 0);
     sealed record ActivityProgress(ulong Id, float[] Values);
@@ -25,18 +26,22 @@ public static partial class PlaylistPointsState
         if (!TryActivities(record.Payload, state!, out var activities))
         { reason = "Playlist activity layout is not recognized; saved progress stays unchanged."; return false; }
         var definitions = ProfileGameData.For(container)?.Playlists ?? Array.Empty<PlaylistActivityCatalog.Series>();
-        playlists = state!.Series.Keys.Where(id => id != 0 && state.Seasons.Keys.Count(k => k.Series == id) == 4)
+        playlists = definitions.Select(d => d.Id).Concat(activities!.Maxima.Keys).Concat(state!.Series.Keys).Where(id => id != 0).Distinct()
             .OrderDescending().Select(id =>
             {
                 var definition = definitions.SingleOrDefault(d => d.Id == id);
                 bool supported = CanComplete(state, activities!, definition, id, out string error);
-                int maximum = activities!.Maxima.TryGetValue(id, out var max) ? max.Maximum : 0;
-                return new Playlist(id, definition?.Name ?? "Playlist", state.Series[id].Value, maximum, supported, error);
+                int maximum = activities!.Maxima.TryGetValue(id, out var max) ? max.Maximum : definition?.Maximum ?? 0;
+                return new Playlist(id, definition?.Name ?? "Playlist", state.Series.GetValueOrDefault(id)?.Value ?? 0, maximum, supported, error)
+                {
+                    NeedsInitialization = !state.Series.ContainsKey(id) || state.Seasons.Keys.Count(k => k.Series == id) != 4 ||
+                        activities.Series.SingleOrDefault(s => s.Series == id)?.Seasons.Count != 4
+                };
             }).ToArray();
         reason = ""; return true;
     }
 
-    /// <summary>Completes the selected Series' saved Playlist activities, not just its overview score cache.
+    /// <summary>Completes the selected Series, adding missing progress from matching game definitions.
     /// Reward-claim flags, dates, account data and online result submissions are never changed.</summary>
     public static bool TryCompletePlaylist(ProfileContainer? container, uint series, out Completion? completion, out string reason)
     {
@@ -49,10 +54,12 @@ public static partial class PlaylistPointsState
         if (!TryHistoryTotal(container!, out var historyNode, out int oldHistory))
         { reason = "Playlist History points are not safely recognized; nothing was changed."; return false; }
         int activityCount = 0, stepCount = 0;
-        var target = activityState!.Series.Single(s => s.Series == series);
+        var target = activityState!.Series.SingleOrDefault(s => s.Series == series);
+        if (target == null) { target = new(series, new()); activityState.Series.Add(target); }
         foreach (var season in definition!.Seasons)
         {
-            var saved = target.Seasons.Single(s => s.Index == season.Index);
+            var saved = target.Seasons.SingleOrDefault(s => s.Index == season.Index);
+            if (saved == null) { saved = new(season.Index, new()); target.Seasons.Add(saved); }
             foreach (var activity in season.Activities)
             {
                 var group = saved.Groups.SingleOrDefault(g => g.Type == activity.Type);
@@ -67,7 +74,7 @@ public static partial class PlaylistPointsState
                 }
             }
         }
-        long delta = (long)definition.Maximum - state!.Series[series].Value;
+        long delta = (long)definition.Maximum - (state!.Series.GetValueOrDefault(series)?.Value ?? 0);
         long lifetime = state.Tail.Lifetime + delta;
         if (lifetime is < 0 or > int.MaxValue) { reason = "Playlist total would overflow; nothing was changed."; return false; }
         // Keep independent historical awards, add only the new Series points,
@@ -75,24 +82,23 @@ public static partial class PlaylistPointsState
         // Never decrement history or touch reward-claim/checkpoint records.
         long history = Math.Max((long)oldHistory + Math.Max(0, delta), lifetime);
         if (history > int.MaxValue) { reason = "Playlist History points would overflow; nothing was changed."; return false; }
-        byte[] prefix = original.Payload[..activityState.Start];
-        foreach (var season in definition.Seasons) Put(prefix, state.Seasons[(series, season.Index)].Offset, season.Maximum);
-        Put(prefix, state.Series[series].Offset, definition.Maximum);
         var tracks = state.Tail.Series.Select(s => new TrackSeries(s.Id, s.Tracks.ToList())).ToList();
         var oldTracks = tracks.SingleOrDefault(s => s.Id == series);
         // Completing every verified scoring activity replaces legacy unattributed
         // (-1) cache points; retaining them would count those same activities twice.
         var nextTracks = new TrackSeries(series, new() { new(BaseTrack, definition.Maximum) });
         if (oldTracks == null) tracks.Add(nextTracks); else tracks[tracks.IndexOf(oldTracks)] = nextTracks;
-        byte[] metadata = (byte[])state.Tail.Metadata.Clone(); Put(metadata, state.Tail.LifetimeOffset, (int)lifetime);
         using var stream = new MemoryStream();
         using (var w = new BinaryWriter(stream, System.Text.Encoding.UTF8, true))
         {
-            w.Write(prefix); WriteActivities(w, activityState.Series);
+            WriteCompletionScores(w, original.Payload, state, definition);
+            // Cached maxima and their native version tokens remain byte-exact.
+            w.Write(original.Payload.AsSpan(state.ContentOffset, activityState.Start - state.ContentOffset));
+            WriteActivities(w, activityState.Series);
             w.Write(original.Payload.AsSpan(activityState.End, state.Tail.Offset - activityState.End));
             w.Write((uint)tracks.Count);
             foreach (var item in tracks) { w.Write(item.Id); w.Write((uint)item.Tracks.Count); foreach (var track in item.Tracks) { w.Write(track.Id); w.Write(track.Points); } }
-            w.Write(metadata);
+            WriteCompletionMetadata(w, state.Tail, series, (int)lifetime);
         }
         byte[] edited = stream.ToArray();
         if (!TryParse(edited, out var check, out reason) || !TryActivities(edited, check!, out var nextState) ||
@@ -153,12 +159,16 @@ public static partial class PlaylistPointsState
     {
         reason = "Select the matching ObjectModelGame.zip to load Playlist challenges.";
         if (definition == null) return false;
+        reason = "Playlist definitions are incomplete; nothing was changed.";
+        if (series == 0 || definition.Id != series || definition.Seasons.Length != 4 ||
+            !definition.Seasons.Select(s => s.Index).Order().SequenceEqual(new uint[] { 0, 1, 2, 3 })) return false;
         reason = "Playlist definitions and saved maximum points do not match. Nothing was changed.";
         if (!activities.Maxima.TryGetValue(series, out var maximum) || maximum.Maximum != definition.Maximum ||
             maximum.Tracks.GetValueOrDefault(BaseTrack) != definition.Maximum || maximum.Tracks.Any(t => t.Key != BaseTrack && t.Value != 0)) return false;
+        if ((state.Series.GetValueOrDefault(series)?.Value ?? 0) > definition.Maximum)
+        { reason = "Saved Playlist points exceed the matching maximum; nothing was changed."; return false; }
         var saved = activities.Series.SingleOrDefault(s => s.Series == series);
-        if (saved == null || saved.Seasons.Count != 4 || definition.Seasons.Any(s => !state.Seasons.ContainsKey((series, s.Index)))) return false;
-        foreach (var season in saved.Seasons)
+        foreach (var season in saved?.Seasons ?? Enumerable.Empty<SeasonProgress>())
         {
             var expected = definition.Seasons.SingleOrDefault(s => s.Index == season.Index);
             if (expected == null) return false;
@@ -177,6 +187,46 @@ public static partial class PlaylistPointsState
             }
         }
         reason = ""; return true;
+    }
+
+    static void WriteCompletionScores(BinaryWriter w, byte[] original, State state, PlaylistActivityCatalog.Series definition)
+    {
+        // Keep the version and both reward-claim maps exactly as loaded.
+        w.Write(original.AsSpan(0, state.ScoreMapsOffset));
+        var scores = state.Series.ToDictionary(p => p.Key, p => p.Value.Value);
+        scores[definition.Id] = definition.Maximum;
+        w.Write((uint)scores.Count);
+        foreach (var item in scores) { w.Write(item.Key); w.Write(item.Value); }
+        var roots = state.SeasonRoots.ToList();
+        if (!roots.Contains(definition.Id)) roots.Add(definition.Id);
+        w.Write((uint)roots.Count);
+        foreach (uint id in roots)
+        {
+            w.Write(id);
+            if (id == definition.Id)
+            {
+                w.Write((uint)definition.Seasons.Length);
+                foreach (var season in definition.Seasons) { w.Write(season.Index); w.Write(season.Maximum); }
+            }
+            else
+            {
+                var seasons = state.Seasons.Where(p => p.Key.Series == id).ToArray();
+                w.Write((uint)seasons.Length);
+                foreach (var season in seasons) { w.Write(season.Key.Season); w.Write(season.Value.Value); }
+            }
+        }
+    }
+
+    static void WriteCompletionMetadata(BinaryWriter w, Tail tail, uint series, int lifetime)
+    {
+        int count = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(tail.Metadata));
+        var seen = Enumerable.Range(0, count).Select(i => BinaryPrimitives.ReadUInt32LittleEndian(tail.Metadata.AsSpan(4 + i * 4))).ToList();
+        if (!seen.Contains(series)) seen.Add(series);
+        w.Write((uint)seen.Count);
+        foreach (uint id in seen) w.Write(id);
+        w.Write(lifetime);
+        // Lifetime reward claims are independent of which Series has been opened.
+        w.Write(tail.Metadata.AsSpan(tail.LifetimeOffset + 4));
     }
 
     static bool TryActivities(byte[] bytes, State state, out ActivityState? result)

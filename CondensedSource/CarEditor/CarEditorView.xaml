@@ -560,6 +560,7 @@
     <Border x:Name="CarEditorHeader" Grid.Row="0" Background="{StaticResource CardHeadGrad}" Padding="20,11"
             BorderBrush="{StaticResource PinkAccentLine}" BorderThickness="0,0,0,2">
       <Grid>
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*"/>
           <ColumnDefinition Width="12"/>
@@ -586,6 +587,18 @@
                    Text="gamedbRC_modified.sqlite" VerticalAlignment="Center" Margin="0,0,8,0"/>
           <Button x:Name="ExportBtn" Content="⬇  Export DB" Style="{StaticResource PinkFilled}"
                   IsEnabled="False" Click="Export_Click"/>
+        </StackPanel>
+        <StackPanel x:Name="StringTableExportOptions" Grid.Row="1" Grid.Column="2" Orientation="Horizontal"
+                    HorizontalAlignment="Right" Margin="0,6,0,0" Visibility="Collapsed">
+          <CheckBox x:Name="ExportTrackLabels" Content="Export string tables" IsChecked="True"
+                    FontSize="11" VerticalAlignment="Center"
+                    ToolTip="Uncheck to export only the DB without reading or generating string tables. New track-width sizes still need matching installed labels to show their names in-game."/>
+          <Button x:Name="StringTableFolderBtn" Content="String tables: Auto…" Style="{StaticResource GhostButton}"
+                  FontSize="11" Padding="6,3" Margin="10,0,0,0" Click="ChooseStringTableFolder_Click"
+                  ToolTip="Choose a stringtables folder containing language ZIPs or language folders. Auto uses the detected game files."/>
+          <Button x:Name="StringTableAutoBtn" Content="Auto" Style="{StaticResource GhostButton}"
+                  FontSize="11" Padding="6,3" Margin="5,0,0,0" Visibility="Collapsed" Click="AutoStringTableFolder_Click"
+                  ToolTip="Use automatic game-folder detection again."/>
         </StackPanel>
       </Grid>
     </Border>
@@ -1088,9 +1101,9 @@
                     <TextBox x:Name="FmTrackUpgradeRear" Style="{StaticResource NumBox}" Width="75"/>
                   </WrapPanel>
                 </StackPanel>
-                <Button x:Name="BtnResetFitment" Content="↺  Reset fitment to stock (selected body)" Style="{StaticResource GhostButton}"
+                <Button x:Name="BtnResetFitment" Content="↺  Reset fitment to stock" Style="{StaticResource GhostButton}"
                         HorizontalAlignment="Left" Margin="0,12,0,0" Click="ResetFitment_Click"
-                        ToolTip="Removes all non-stock tire-width, tire-profile and track-width options from the ticked body/bodies."/>
+                        ToolTip="Removes non-stock rim sizes for the whole car, plus non-stock tire-width, tire-profile and track-width options for the selected body. Stock rows are kept."/>
               </StackPanel>
             </StackPanel>
           </Border>

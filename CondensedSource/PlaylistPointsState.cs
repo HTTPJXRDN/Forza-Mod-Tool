@@ -16,7 +16,8 @@ public static partial class PlaylistPointsState
     sealed record Track(int Id, int Points);
     sealed record TrackSeries(uint Id, List<Track> Tracks);
     sealed record Tail(int Offset, List<TrackSeries> Series, byte[] Metadata, int LifetimeOffset, int Lifetime);
-    sealed record State(Dictionary<uint, Score> Series, Dictionary<(uint Series, uint Season), Score> Seasons, Tail Tail, int ContentOffset);
+    sealed record State(Dictionary<uint, Score> Series, Dictionary<(uint Series, uint Season), Score> Seasons, Tail Tail, int ContentOffset,
+        int ScoreMapsOffset, List<uint> SeasonRoots);
 
     public static bool TryRead(ProfileContainer? container, out Season[] seasons, out string reason)
     {
@@ -100,12 +101,14 @@ public static partial class PlaylistPointsState
             }
             count = r.Count(MaxSeries); roots.Clear();
             for (int i = 0; i < count; i++) { if (!roots.Add(r.U32())) return false; r.Rewards(); }
+            int scoreMapsOffset = r.Offset;
             count = r.Count(MaxSeries); var series = new Dictionary<uint, Score>();
             for (int i = 0; i < count; i++) { uint id = r.U32(); var score = r.Score(); if (!series.TryAdd(id, score)) return false; }
-            count = r.Count(MaxSeries); roots.Clear(); var seasonScores = new Dictionary<(uint, uint), Score>();
+            count = r.Count(MaxSeries); roots.Clear(); var seasonScores = new Dictionary<(uint, uint), Score>(); var seasonRoots = new List<uint>();
             for (int i = 0; i < count; i++)
             {
                 uint id = r.U32(); if (!series.ContainsKey(id) || !roots.Add(id)) return false;
+                seasonRoots.Add(id);
                 uint seasons = r.Count(4); long sum = 0;
                 for (int j = 0; j < seasons; j++) { uint key = r.U32(); var score = r.Score(); if (key > 3 || !seasonScores.TryAdd((id, key), score)) return false; sum += score.Value; }
                 if (sum > series[id].Value) return false; // Series-only activities may add extra points.
@@ -126,7 +129,7 @@ public static partial class PlaylistPointsState
                 tail = candidate;
             }
             if (tail == null) return false;
-            state = new(series, seasonScores, tail, contentOffset); reason = ""; return true;
+            state = new(series, seasonScores, tail, contentOffset, scoreMapsOffset, seasonRoots); reason = ""; return true;
         }
         catch (Exception error) when (error is InvalidDataException or ArgumentOutOfRangeException or OverflowException) { return false; }
     }

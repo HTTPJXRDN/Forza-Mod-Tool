@@ -2,6 +2,8 @@ Crypto
 
 Back up your files. Close the game before installing changes.
 
+Check for updates beside the version number checks GitHub. Download update now prepares the app update. Export your work, then Restart to install update. Other files stay untouched.
+
 1. Drop a file into the top box.
 2. Choose Decrypt or Re-encrypt. Use the matching original file if a template is requested.
 3. The log shows the output path. Output folder lets you choose another location.
