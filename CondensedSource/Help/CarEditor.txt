@@ -9,7 +9,7 @@ Switch to a different car, wait for the game to save, then close it. Back up you
 
 Fitment
 - Select Stock or the right Widebody tab before editing.
-- Reset fitment removes non-stock rim sizes for the whole car, plus widths, profiles and track widths for the selected body. Stock rows stay.
+- Reset fitment restores factory sizes, values and upgrade options from matching embedded stock, keeping native part IDs. Rims affect the whole car; widths, profiles and track widths affect the selected body. Without a stock baseline it restores loaded values.
 - FH5/FH6 track width uses mm per side. Enter 20 for 20 mm on each side. The + step starts at 5 mm; Step (mm) changes it.
 - To repair old size labels, check Track offset and Apply without adding steps. This also works on multiple cars.
 - Install any exported stringtables folder in MediaPC\stripped. Keep a backup of existing string tables.

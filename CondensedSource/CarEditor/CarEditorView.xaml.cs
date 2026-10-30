@@ -1286,6 +1286,7 @@ public partial class CarEditorView : UserControl
         _loadedNativeTrackOffsets = HasNativeTrackOffsets
             ? Query("SELECT * FROM CarTrackOffsets").ToDictionary(r => Convert.ToInt64(r["Id"]))
             : new();
+        CaptureLoadedFitmentCatalog();
     }
 
     bool HasColumn(string table, string column) => _schema.TryGetValue(table, out var columns) && columns.Contains(column);
@@ -1434,6 +1435,8 @@ public partial class CarEditorView : UserControl
         ShowSingleCarFitmentAddButtons(!batch);
         bool canRestore = !batch && ReferenceHasCar(c.Id);
         RestoreCarBtn.IsEnabled = canRestore;
+        BtnResetFitment.Content = _stockReferenceAttached && selected.All(item => ReferenceHasCar(item.Id))
+            ? "↺  Reset fitment to stock" : "↺  Reset fitment to loaded DB";
         RestoreCarBtn.ToolTip = batch
             ? "Restore is disabled in batch mode because restoring a whole car also replaces its bodykit rows."
             : canRestore
@@ -2969,16 +2972,7 @@ public partial class CarEditorView : UserControl
         try
         {
             Exec("SAVEPOINT " + savepoint); opened = true;
-            // Rim sizes belong to the whole car, while the other fitment rows
-            // belong to the selected stock/widebody. Keep every stock row.
-            foreach (var table in new[] { "List_UpgradeRimSizeFront", "List_UpgradeRimSizeRear" })
-                if (_schema.ContainsKey(table)) Exec($"DELETE FROM \"{table}\" WHERE Ordinal=? AND IsStock=0", _car.Id);
-            foreach (var bd in bodies)
-                foreach (var t in new[] {
-                    "List_UpgradeCarBodyTireWidthFront","List_UpgradeCarBodyTireWidthRear",
-                    "List_UpgradeCarBodyTireAspectRatioFront","List_UpgradeCarBodyTireAspectRatioRear",
-                    "List_UpgradeCarBodyTrackSpacingFront","List_UpgradeCarBodyTrackSpacingRear" })
-                    if (_schema.ContainsKey(t)) Exec($"DELETE FROM \"{t}\" WHERE CarBodyId=? AND IsStock=0", bd);
+            RestoreFitmentCatalog(bodies);
             if (HasNativeTrackOffsets)
             {
                 Exec("DELETE FROM CarTrackOffsets WHERE Id=?", _car.Id);
@@ -2987,7 +2981,7 @@ public partial class CarEditorView : UserControl
             }
             Exec("RELEASE " + savepoint); opened = false;
             MarkModified(_car.Id);
-            Log($"↺ fitment reset: non-stock rim sizes removed for this car; widths, profiles and tracks reset on {bodies.Length} body/bodies", "ok");
+            Log($"↺ fitment restored: baseline upgrade options and part IDs retained; rim sizes for this car, widths/profiles/tracks for {bodies.Length} body/bodies", "ok");
             if (!_batchRunning) FillRims(_car.Id);
             FillFitment();
         }

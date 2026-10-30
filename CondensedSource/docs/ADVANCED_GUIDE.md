@@ -602,7 +602,9 @@ If a required table cannot be read, the error names its file. An unused lower-pr
 
 #### Reset fitment
 
-**Reset fitment to stock** removes non-stock front/rear rim sizes for the whole car, plus non-stock tire-width, tire-profile and track-width options from the active body. Stock rows are kept. The fields refresh after resetting so old queued sizes cannot be reapplied. Batch reset uses each selected car's stock body.
+**Reset fitment to stock** restores factory values, upgrade options and their original part IDs from the matching embedded DB. It removes added choices and restores edited or missing factory rows. `IsStock=0` also identifies normal factory upgrades; it does not mean a row was modified. Rims affect the whole car; widths, profiles and track widths affect the selected body. Batch reset uses each car's stock body. Tool-added bodies use the stock body's catalogue with their own part-ID block. Where no embedded baseline exists, loaded values are restored. Queued steps are cleared.
+
+Version 1.3.0.1 fixes the earlier reset deleting native upgrade options. Repeating the reset with this build repairs those missing native rows. Return cars using added fitment parts to native parts before installing a reset DB; the editor does not rewrite garage saves or tuning setups.
 
 #### Multi-car batch fitment
 

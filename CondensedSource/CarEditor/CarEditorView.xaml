@@ -1103,7 +1103,7 @@
                 </StackPanel>
                 <Button x:Name="BtnResetFitment" Content="↺  Reset fitment to stock" Style="{StaticResource GhostButton}"
                         HorizontalAlignment="Left" Margin="0,12,0,0" Click="ResetFitment_Click"
-                        ToolTip="Removes non-stock rim sizes for the whole car, plus non-stock tire-width, tire-profile and track-width options for the selected body. Stock rows are kept."/>
+                        ToolTip="Restores factory fitment values and upgrade options from matching embedded stock, keeping their original part IDs. Rims affect the whole car; widths, profiles and track widths affect the selected body. Uses loaded values where no embedded baseline exists."/>
               </StackPanel>
             </StackPanel>
           </Border>

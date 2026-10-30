@@ -1,4 +1,4 @@
-# Forza Mod Tool — 1.3.0
+# Forza Mod Tool — 1.3.0.1
 
 Edit supported files from **FH2, FH5, FH6 and Forza Motorsport (FM8)**. Profile Editor and Garage Viewer support FH6 and FH2/Azimuth saves. Save Swap is FH6-only; FH5 saves can be decrypted in Crypto.
 
@@ -33,6 +33,8 @@ Edit supported files from **FH2, FH5, FH6 and Forza Motorsport (FM8)**. Profile 
 - [Troubleshooting](#if-something-goes-wrong)
 - [Disclaimer](#disclaimer)
 - [Credits](#credits)
+
+**1.3.0.1:** fixes Reset fitment deleting factory upgrade options. Repeating the reset with this build restores native rows missing from an earlier reset. Return cars using added fitment parts to native parts before installing a reset DB.
 
 ## Start here
 
@@ -121,7 +123,7 @@ FH5 uses the same `MediaPC\stripped` installation pattern through your existing 
 
 - **Track width (FH5/FH6):** enter mm per side. `20` means 20 mm each side; the DB stores `0.040` metres total. The wider step defaults to 5 mm, and **Step (mm)** changes the increment. Reapply Track offset without new steps to repair old size names, including batches. Install any exported `stringtables` folder under the game's `MediaPC\stripped`; correct existing tables are reused.
 - **Car bucket:** choose the category name, then **Set bucket**.
-- **Reset fitment to stock:** removes non-stock rim sizes for the whole car, plus non-stock tire widths, profiles and track widths for the selected body. Stock rows are kept. Supports batches.
+- **Reset fitment to stock:** restores factory fitment values, upgrade options and native part IDs from the matching embedded DB. Added options are removed; edited or missing factory rows are restored. Rims affect the whole car; tire widths, profiles and tracks affect the selected body. Supports batches. Without an embedded baseline, it restores the values loaded with the DB.
 - **Engine names:** **Label stock engines** uses car name - engine name. Generic engines keep their names. Labels are shared by every car using that engine.
 - **Restore selected car:** restores the car's own DB records, including DB Browser edits. Added swap links are removed; engine names and shared parts stay intact. Check the log for shared items kept.
 - **Thumbnails:** Auto-find supports FH2/FH5/FH6, or choose a folder/ZIP. Sources are remembered per game. FM8 needs extracted supported images.
