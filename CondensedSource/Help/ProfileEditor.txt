@@ -7,7 +7,7 @@ FH6
 2. Change values in Overview, then Apply. XP shows a level preview.
 3. Export save writes C_ProfileData.edited. Install an encrypted copy as C_ProfileData.
 
-- Playlist: choose one, then Complete playlist. Missing progress is added; rewards stay unclaimed. If unavailable, Choose game data and select FH6's media\ObjectModelGame.zip.
+- Playlist: choose one, then Complete playlist. Missing progress is added and point totals are synced; rewards stay unclaimed. If unavailable, Choose game data and select FH6's media\ObjectModelGame.zip.
 - Unlocks: search, select items, then Unlock selected. Ctrl+A selects the visible list. Badge dates use UTC.
 - Roads: Discover all roads fills the map.
 - Collection Journal: select rows, then Complete selected challenges. The tickboxes show status.

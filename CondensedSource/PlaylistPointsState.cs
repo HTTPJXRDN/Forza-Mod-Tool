@@ -36,6 +36,8 @@ public static partial class PlaylistPointsState
             || !state!.Seasons.TryGetValue((series, season), out var old)) return false;
         long delta = (long)points - old.Value;
         if (delta == 0) { reason = ""; return true; }
+        if (!TrackScoresMatch(state, series))
+        { reason = "This Series has different saved point totals. Use Complete playlist with matching game data to rebuild them. Nothing was changed."; return false; }
         long nextSeries = state.Series[series].Value + delta, lifetime = state.Tail.Lifetime + delta;
         var target = state.Tail.Series.SingleOrDefault(s => s.Id == series);
         int index = target?.Tracks.FindIndex(t => t.Id == BaseTrack) ?? -1;
@@ -114,22 +116,28 @@ public static partial class PlaylistPointsState
                 if (sum > series[id].Value) return false; // Series-only activities may add extra points.
             }
             if (seasonScores.Count == 0 || series.Values.Sum(s => (long)s.Value) > int.MaxValue) return false;
-            // The variable activity section is opaque. Locate the unique FULL
-            // suffix grammar, cross-checking every per-track sum and lifetime
-            // score against the independently parsed leading score maps. This
-            // does not rely on fixed offsets or neighbouring point values.
+            // Parse through the activity and two season-timestamp maps to reach
+            // the suffix at its exact boundary. Saved per-track caches can differ
+            // from the primary scores, so their sums cannot locate that boundary.
             int contentOffset = r.Offset;
-            Tail? tail = null; int minimum = series.Values.Count(s => s.Value > 0);
-            for (int at = r.Offset; at <= bytes.Length - 20; at++)
+            if (!TryActivityMaps(bytes, contentOffset, series, out var activities)) return false;
+            r.Offset = activities!.End;
+            for (int map = 0; map < 2; map++)
             {
-                uint possible = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(at));
-                if (possible < minimum || possible > series.Count) continue;
-                if (!TryTail(bytes, at, series, out var candidate)) continue;
-                if (tail != null) return false; // Ambiguous data must not be guessed.
-                tail = candidate;
+                count = r.Count(MaxSeries); roots.Clear();
+                for (int i = 0; i < count; i++)
+                {
+                    uint id = r.U32(); if (!series.ContainsKey(id) || !roots.Add(id)) return false;
+                    uint seasons = r.Count(4); var keys = new HashSet<uint>();
+                    for (int j = 0; j < seasons; j++)
+                    {
+                        uint key = r.U32(); if (key > 3 || !keys.Add(key)) return false;
+                        _ = r.U32(); // Preserve the native clock value without interpreting it.
+                    }
+                }
             }
-            if (tail == null) return false;
-            state = new(series, seasonScores, tail, contentOffset, scoreMapsOffset, seasonRoots); reason = ""; return true;
+            if (!TryTail(bytes, r.Offset, series, out var tail)) return false;
+            state = new(series, seasonScores, tail!, contentOffset, scoreMapsOffset, seasonRoots); reason = ""; return true;
         }
         catch (Exception error) when (error is InvalidDataException or ArgumentOutOfRangeException or OverflowException) { return false; }
     }
@@ -146,7 +154,7 @@ public static partial class PlaylistPointsState
                 uint id = r.U32(); if (!scores.TryGetValue(id, out var score) || !seen.Add(id)) return false;
                 uint tracks = r.Count(64); var trackKeys = new HashSet<int>(); var values = new List<Track>(); long sum = 0;
                 for (int j = 0; j < tracks; j++) { int key = unchecked((int)r.U32()); int points = r.Score().Value; if (key < -1 || key > 1_000_000 || !trackKeys.Add(key)) return false; values.Add(new(key, points)); sum += points; }
-                if (sum != score.Value) return false;
+                if (sum > int.MaxValue) return false;
                 series.Add(new(id, values));
             }
             if (scores.Any(s => s.Value.Value > 0 && !seen.Contains(s.Key))) return false;
@@ -160,6 +168,10 @@ public static partial class PlaylistPointsState
         }
         catch (Exception error) when (error is InvalidDataException or ArgumentOutOfRangeException or OverflowException) { return false; }
     }
+
+    static bool TrackScoresMatch(State state, uint series) =>
+        (state.Tail.Series.SingleOrDefault(s => s.Id == series)?.Tracks.Sum(t => (long)t.Points) ?? 0)
+            == (state.Series.GetValueOrDefault(series)?.Value ?? 0);
 
     sealed class Reader(byte[] bytes)
     {

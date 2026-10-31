@@ -38,6 +38,7 @@ public partial class ProfileEditorView
             chooseData.Visibility = selected.Supported ? Visibility.Collapsed : Visibility.Visible;
             status.Text = selected.Supported
                 ? (selected.NeedsInitialization ? "Missing Playlist progress will be added. " : "")
+                    + (selected.NeedsScoreRepair ? "Saved point totals will be synchronized. " : "")
                     + "Complete all four seasons. Playlist History points update automatically; rewards stay unclaimed. Click Export save to write a separate file."
                 : selected.Reason;
         }
@@ -49,6 +50,7 @@ public partial class ProfileEditorView
             {
                 if (!_confirmUnlockTest($"Complete Series {selected.Series} — all four seasons ({selected.Maximum:n0} points)? "
                     + (selected.NeedsInitialization ? "Missing season and activity records will be created. " : "")
+                    + (selected.NeedsScoreRepair ? "Saved point totals will be synchronized with the loaded game data. " : "")
                     + "This updates activities, score totals and Playlist History points. It does not claim rewards or create online records. Export a separate save and test in-game.")) return;
                 byte[] before = _container.Serialize();
                 if (!PlaylistPointsState.TryCompletePlaylist(_container, selected.Series, out var result, out string error)) throw new InvalidOperationException(error);
