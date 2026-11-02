@@ -1,3 +1,15 @@
+# Forza Mod Tool v1.3.0.3
+
+- Added the latest FH6 stock database and nine new cars for Car Editor comparison, restore and update merges.
+- Added support for the updated FH6 save and Playlist layout, including schedules with multiple monthly rivals.
+- New Journal, badge, clothing and horn definitions load from the installed game data.
+- Restart to install now appears in bright green. A themed window shows the changes after an update.
+- Improved car DB import compatibility.
+- Added string-table editing in Crypto. Decode .str files to JSON, edit or add names, then rebuild them.
+- Garage Viewer recognizes added cars from your installed or selected FH6 GameDB, including their names and manufacturers.
+- Unknown garage models can now be removed; protected cars stay locked.
+- Added Repair earned bonuses for stuck Collection Journal bonuses. It checks all categories without selecting rows; completing challenges also checks for missing bonuses.
+
 # Forza Mod Tool v1.3.0.2
 
 - Fixed Festival Playlist showing as unsupported in some FH6 saves.

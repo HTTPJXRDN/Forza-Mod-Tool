@@ -1,0 +1,24 @@
+<Window x:Class="FH6LocalCryptoTool.UpdateCompleteWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Forza Mod Tool — Updated" Width="620" Height="470"
+        MinWidth="380" MinHeight="280" WindowStartupLocation="CenterOwner"
+        Background="#FF1D1D1F" Foreground="#FFF4F4F6" WindowStyle="None"
+        ResizeMode="CanResizeWithGrip" ShowInTaskbar="False">
+    <Border Background="#FF1D1D1F" BorderBrush="#FFE8175D" BorderThickness="1" Padding="24">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <TextBlock Text="Update installed" FontSize="25" FontWeight="SemiBold" Foreground="#FF58FF75" MouseLeftButtonDown="DragHeader"/>
+            <TextBlock x:Name="VersionText" Grid.Row="1" Margin="0,8,0,18" Foreground="#FF9C9CA2" TextWrapping="Wrap"/>
+            <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <TextBlock x:Name="ChangesText" TextWrapping="Wrap" FontSize="14" LineHeight="23" Margin="0,0,12,0"/>
+            </ScrollViewer>
+            <Button Grid.Row="3" Content="Let's go" Style="{DynamicResource PinkButton}" HorizontalAlignment="Right" Padding="22,9" Margin="0,18,0,0" IsDefault="True" IsCancel="True" Click="CloseNotice"/>
+        </Grid>
+    </Border>
+</Window>
