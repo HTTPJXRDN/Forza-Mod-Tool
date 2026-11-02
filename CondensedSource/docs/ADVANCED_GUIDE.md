@@ -1,10 +1,12 @@
 > For the short beginner guide, start with [README](../README.md).
 
+**Check for updates** beside the version number checks the latest published GitHub release. **Download update now** downloads and validates the app ZIP. Export unsaved work before clicking **Restart to install update**. Only supported packaged tool files are replaced; saves, databases, custom Help, xcompress64.dll and other files are preserved. Replaced files are backed up under `%TEMP%\ForzaModTool\Updates`. Failed installs attempt to restore the previous files. Unsupported release packages open on GitHub for manual download. Checks run only when clicked.
+
 # Detailed usage and technical reference
 
 Forza Mod Tool supports GameDB editing and merging for FH2, FH5, FH6 and Forza Motorsport (FM8). Profile Editor and Garage Viewer support FH6 and FH2/Azimuth saves. Save Swap is FH6-only, and FH5 profile saves are decrypt-only in Crypto.
 
-Download and extract `FH6LocalModTool_v1.3.0.zip` from the release assets. See [what changed since 1.2.6.3](../CHANGELOG.md).
+Download and extract `FH6LocalModTool_v1.3.0.3.zip` from the release assets. See [what changed since 1.2.6.3](../CHANGELOG.md).
 
 ## Table of contents
 
@@ -136,7 +138,7 @@ FH5 editing and exported size labels were confirmed in-game. See [four-game supp
 
 ## Start here: a beginner's guide
 
-Download and extract `FH6LocalModTool_v1.3.0.zip` from the release assets, then run **FH6ModStudio.exe**. Keep the included DLLs, animation helpers, `Help` and `licenses` folders beside the executable. If building from source, run the resulting `FH6ModStudio.exe` instead.
+Download and extract `FH6LocalModTool_v1.3.0.3.zip` from the release assets, then run **FH6ModStudio.exe**. Keep the included DLLs, animation helpers, the `licenses` folder beside the executable. If building from source, run the resulting `FH6ModStudio.exe` instead.
 
 The tool has seven tabs:
 
@@ -297,6 +299,9 @@ The tool does not overwrite the original input during these operations.
 
 Use the **Crypto** tab for encrypted GameDB files, supported text assets, ZIP extraction/rebuilding, FH6 `C_ProfileData`, and database merging. Manual GameDB decrypt/re-encrypt is optional when Car Editor loads an SLT directly.
 
+Native `.str` string tables can also be decoded to `.str.json` with **Decrypt**. Edit or add keys inside `Entries`, leaving `Format`, `Table`, `Version` and `NativeTemplate` unchanged. Re-encrypt the JSON to rebuild the binary table. Rename the output to its original `.str` filename before installing.
+
+
 For FH5/FH6 GameDB work, use the copied file at `MediaPC\stripped\gamedbRC.slt`. Keep the original `media\stripped\gamedbRC.slt` untouched.
 
 ### Decrypt a GameDB
@@ -418,6 +423,8 @@ Use this to carry your current mods into a newer GameDB without losing the updat
 - Launch the game and check your mods and the new content. If anything is wrong, close the game and restore your backed-up modded file.
 
 ![Step 3: back up the old modded GameDB and rename the updated-merge output to gamedbRC.slt](../Screenshots/merge-updated-db-step-3.png)
+
+After merging, refresh any `stringtables`, `zipmanifest.xml` and `cars\AnimResourceConfig.txt` overrides in `MediaPC` from the updated game files while keeping custom entries. DB merging does not update these assets. Stale loose tables can hide new labels; an old manifest can leave new car or thumbnail ZIPs unregistered.
 
 The photos show example filenames from an earlier app version; follow the same three-step workflow. For FH6 SLT inputs, the output is already encrypted: no separate decrypt/re-encrypt step is needed.
 
@@ -568,43 +575,17 @@ Single-car mode keeps the prefilled absolute boxes and also provides the same re
 
 To repair older track-width names without adding widths, select one or several cars, check **Track offset**, leave new steps unqueued and Apply. Existing values can be edited after export/reload and applied again. Size labels are shared by axle/size, not per car.
 
-#### Track-width labels and string tables
-
 Full DB exports write any needed labels beside the exported DB under `mediapc\stripped\stringtables`. Back up your installed tables, then drag the `stringtables` folder into the game's `MediaPC\stripped`. The tool reads existing game tables and reuses correct labels; unchanged tables are not generated again. Larger sizes add missing labels without losing earlier names. Car-related exports stay DB-only; export the receiving full DB to generate its labels.
 
-**Export string tables**, below Export, is on by default for FH5/FH6. Uncheck it for DB-only SLT or SQLite output. This skips all string-table reads and writes and keeps the DB edits. New track-width sizes still need matching installed labels to show their names in-game.
+The installed `MediaPC\stripped\stringtables` folder does not need to exist. Auto reads stock tables from `media\stripped\stringtables` when there are no MediaPC overrides, then creates the needed folders beside the exported DB.
 
-**String tables: Auto…** opens the folder picker. Choose the `stringtables` folder containing language ZIPs or language folders such as `EN\Upgrades.str`, not the `EN` folder itself. A custom selection uses that folder instead of searching other installs. **Auto** restores game-folder detection. Selections are kept separately for FH5 and FH6 during the current session.
+**Export string tables** below the Export button is on by default for FH5/FH6. Turn it off to export only the DB without reading installed string tables or writing companion files. This works for SLT and SQLite output and keeps every DB edit. New track-width sizes still need matching installed labels to show their names in-game. Valid language ZIPs and loose `EN\Upgrades.str` files are supported; loose overrides take priority. If a required table cannot be read, the error names its file.
 
-Auto uses this order for each language:
+Use **String tables: Auto…** to select a `stringtables` folder manually. The selected folder supplies the tables for that export; the tool does not search other installs when a custom folder is selected. Choose the folder containing `EN.zip` or language folders such as `EN\Upgrades.str`, not the `EN` folder itself. **Auto** restores game-folder detection. The selection is kept separately for FH5 and FH6 during the current session.
 
-1. `MediaPC\stripped\stringtables\<language>\Upgrades.str`
-2. `MediaPC\stripped\stringtables\<language>.zip`
-3. `media\stripped\stringtables\<language>\Upgrades.str`
-4. `media\stripped\stringtables\<language>.zip`
+**Reset fitment to stock** restores the matching embedded DB's factory values, upgrade options and original part IDs. It removes added fitment choices and restores edited or missing native rows. `IsStock=0` also identifies legitimate factory upgrades, so those rows are restored rather than removed wholesale. Rim sizes affect the whole car; tire widths, profiles and track widths affect the selected body. Batch reset uses each selected car's stock body. Tool-added bodies use the stock body's fitment catalogue with their own part-ID block. Where no embedded baseline exists, the button restores the values loaded with the DB. Queued steps are cleared and the fields refresh after resetting.
 
-The MediaPC stringtables folder does not need to exist. Auto can read the stock `media` tables and create the needed overrides beside your export. If no readable installation is found, the bundled clean tables allow offline export. Installed game files are never changed by export.
-
-For example:
-
-```text
-gamedbRC_modified.slt
-mediapc/
-  stripped/
-    stringtables/
-      EN/
-        Upgrades.str
-```
-
-Copy the generated `stringtables` folder into the game's `MediaPC\stripped` after backing up existing overrides. Keep the language folders and loose `Upgrades.str` files as generated. A valid stock `EN.zip` is supported as an input; it does not need extracting just for the tool to read it.
-
-If a required table cannot be read, the error names its file. An unused lower-priority ZIP does not block a valid loose override. **Central Directory corrupt** is a ZIP-read error; it does not by itself mean the database is corrupt. Check that ZIP, choose a valid folder, or turn off **Export string tables** to export the DB while investigating. This setting does not repair the unreadable file.
-
-#### Reset fitment
-
-**Reset fitment to stock** restores factory values, upgrade options and their original part IDs from the matching embedded DB. It removes added choices and restores edited or missing factory rows. `IsStock=0` also identifies normal factory upgrades; it does not mean a row was modified. Rims affect the whole car; widths, profiles and track widths affect the selected body. Batch reset uses each car's stock body. Tool-added bodies use the stock body's catalogue with their own part-ID block. Where no embedded baseline exists, loaded values are restored. Queued steps are cleared.
-
-Version 1.3.0.1 fixes the earlier reset deleting native upgrade options. Repeating the reset with this build repairs those missing native rows. Return cars using added fitment parts to native parts before installing a reset DB; the editor does not rewrite garage saves or tuning setups.
+Resetting removes added part IDs. Before installing a reset DB, return any cars using those custom parts to native parts. The DB editor does not rewrite garage saves or saved tuning setups. Version 1.3.0.1 fixes the earlier reset deleting factory upgrade options; an untouched matching DB or another reset with the fixed build restores those native rows.
 
 #### Multi-car batch fitment
 
@@ -815,7 +796,8 @@ Overview shows the supported values found in your save:
 - Online XP with its own level and linked Driver XP previews. Driver XP retention was confirmed after earning XP and restarting; Online XP persistence remains unconfirmed.
 - Current Season Progress points and a Playlist History summary.
 - Playlist reward level, last checkpoint, and claimed-reward count.
-- **Complete playlist:** select a saved series to complete its seasons and activities and update Playlist History points. Rewards stay unclaimed.
+- **Complete playlist:** select a series to complete its seasons and activities and update Playlist History points. Missing progress is added from matching game data; rewards stay unclaimed.
+- If completion is unavailable, **Choose game data…** beside the Playlist controls opens your FH6 `media\ObjectModelGame.zip`. Its location is remembered for future loads.
 - Horizon Collection and world-progress summaries; supported totals follow Journal completion.
 - Character items owned, barn-find totals, car-experience unlocks, and festival-site status.
 

@@ -162,7 +162,9 @@ public static partial class PlaylistPointsState
         if (series == 0 || definition.Id != series || definition.Seasons.Length != 4 ||
             !definition.Seasons.Select(s => s.Index).Order().SequenceEqual(new uint[] { 0, 1, 2, 3 })) return false;
         reason = "This Playlist has an unsupported points track. Nothing was changed.";
-        if (!activities.Maxima.TryGetValue(series, out var maximum) || !maximum.Tracks.ContainsKey(BaseTrack) ||
+        if (!activities.Maxima.TryGetValue(series, out var maximum))
+        { reason = "Open Festival Playlist in the updated game, let it save, then reload this save to initialize the new Series."; return false; }
+        if (!maximum.Tracks.ContainsKey(BaseTrack) ||
             maximum.Tracks.GetValueOrDefault(BaseTrack) != maximum.Maximum || maximum.Tracks.Any(t => t.Key != BaseTrack && t.Value != 0)) return false;
         if ((state.Series.GetValueOrDefault(series)?.Value ?? 0) > definition.Maximum)
         { reason = "Saved Playlist points exceed the matching maximum; nothing was changed."; return false; }

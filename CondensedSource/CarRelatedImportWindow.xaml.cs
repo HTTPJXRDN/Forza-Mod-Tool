@@ -19,7 +19,7 @@ public partial class CarRelatedImportWindow : Window
         : this(new[] { car }, preview, basePath, donorPath) { }
 
     public CarRelatedImportWindow(IReadOnlyList<CarRelatedDbExport.Car> cars, ModMergePreview preview,
-                                  string basePath, string donorPath, bool convertedReplacement = false)
+                                  string basePath, string donorPath, bool convertedReplacement = false, bool portableOptions = false)
     {
         _convertedReplacement = convertedReplacement;
         if (cars.Count == 0) throw new ArgumentException("The donor contains no cars.", nameof(cars));
@@ -52,6 +52,12 @@ public partial class CarRelatedImportWindow : Window
             OverrideConflicts.Checked += ReplacementChoiceChanged;
             OverrideConflicts.Unchecked += ReplacementChoiceChanged;
             ImportButton.Content = "Import replacement";
+        }
+        else if (portableOptions)
+        {
+            RebuildCarRows.IsChecked = true;
+            RebuildCarRows.IsEnabled = false;
+            RebuildDescription.Text = "Portable converter export: our physics, thumbnails and names plus reference upgrade choices. Rebuild only the selected cars so their private component links replace earlier entries. New cars are added; other cars and existing shared definitions are preserved.";
         }
     }
 

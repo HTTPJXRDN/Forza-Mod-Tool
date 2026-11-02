@@ -633,7 +633,7 @@
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,2,0,0">
                         <Ellipse Width="5" Height="5" Fill="{StaticResource Pink}" VerticalAlignment="Center" Margin="0,0,7,0"/>
                         <TextBlock Foreground="{StaticResource Dim}" FontSize="12.5" VerticalAlignment="Center">
-                            <Run Text=".skeld" Foreground="{StaticResource Ink}"/><Run Text="  ↔  decode/rebuild skeleton JSON"/>
+                            <Run Text=".str / .skeld" Foreground="{StaticResource Ink}"/><Run Text="  ↔  editable JSON / rebuild"/>
                         </TextBlock>
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,2,0,0">

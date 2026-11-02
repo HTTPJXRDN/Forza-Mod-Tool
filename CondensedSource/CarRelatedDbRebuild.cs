@@ -54,6 +54,7 @@ public static partial class Merge
                 var foreignKeysBefore = CarRebuildForeignKeys(con);
                 Exec(con, "PRAGMA foreign_keys=OFF;");
                 Exec(con, $"ATTACH DATABASE '{SqlPath(preview.OverlayPath)}' AS ov;");
+                Exec(con, $"ATTACH DATABASE '{SqlPath(preview.BasePath)}' AS original;");
                 var current = CarRelatedDbScope.ReadRowScopes(con, "main", selectedCars);
                 var donor = CarRelatedDbScope.ReadRowScopes(con, "ov", selectedCars);
                 var otherCars = CarRelatedDbScope.ReadRowScopes(con, "main", selectedCars, otherCars: true);
@@ -71,6 +72,19 @@ public static partial class Merge
                     otherCars.TryGetValue(table, out string? sharedScope);
                     writable[table] = $"(COALESCE(({oldScope ?? "0"}),0) OR COALESCE(({newScope ?? "0"}),0)) " +
                                       $"AND NOT COALESCE(({sharedScope ?? "0"}),0)";
+                }
+                // A newly supplied lookup/audio row can already be referenced
+                // by an unselected car whose original DB omitted that row.
+                // Append only selected-donor keys absent from the original.
+                // Existing shared rows remain protected byte-for-byte.
+                foreach (string table in baseTables.Intersect(donorTables, StringComparer.OrdinalIgnoreCase))
+                {
+                    if (!donor.TryGetValue(table, out string? scope)) continue;
+                    var keys = PrimaryKeyColumns(con, "main", table);
+                    if (keys.Count == 0) continue;
+                    string incoming = string.Join(" AND ", keys.Select(k => $"d.{Q(k)} IS {Q(table)}.{Q(k)}"));
+                    string original = string.Join(" AND ", keys.Select(k => $"o.{Q(k)} IS {Q(table)}.{Q(k)}"));
+                    writable[table] += $" OR (EXISTS (SELECT 1 FROM ov.{Q(table)} d WHERE ({scope}) AND {incoming}) AND NOT EXISTS (SELECT 1 FROM original.{Q(table)} o WHERE {original}))";
                 }
                 var preserved = baseTables.ToDictionary(t => t,
                     t => CarRebuildFingerprint(con, t, "NOT (" + writable[t] + ")"), StringComparer.OrdinalIgnoreCase);

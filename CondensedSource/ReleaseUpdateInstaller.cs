@@ -162,8 +162,9 @@ internal static class ReleaseUpdateInstaller
                 if (!process.WaitForExit(60_000)) throw new IOException("The tool did not close in time; update cancelled.");
             }
             catch (ArgumentException) { } // The old instance has already closed.
+            string? previousVersion = FileVersionInfo.GetVersionInfo(target).FileVersion;
             ApplyPrepared(planPath);
-            if (plan.RestartAfterUpdate) Restart(target);
+            if (plan.RestartAfterUpdate) Restart(target, previousVersion);
             return 0;
         }
         catch (Exception ex)
@@ -289,5 +290,17 @@ internal static class ReleaseUpdateInstaller
         }
         finally { if (File.Exists(incoming)) File.Delete(incoming); }
     }
-    static void Restart(string executable) => Process.Start(new ProcessStartInfo(executable) { UseShellExecute = true, WorkingDirectory = System.IO.Path.GetDirectoryName(executable)! });
+    static void Restart(string executable, string? previousVersion = null)
+        => Process.Start(RestartCommand(executable, previousVersion));
+
+    internal static ProcessStartInfo RestartCommand(string executable, string? previousVersion = null)
+    {
+        var start = new ProcessStartInfo(executable) { UseShellExecute = true, WorkingDirectory = System.IO.Path.GetDirectoryName(executable)! };
+        if (ReleaseUpdates.TryVersion(previousVersion, out var previous) && previous < ReleaseUpdates.InstalledVersion)
+        {
+            start.ArgumentList.Add("--updated-from");
+            start.ArgumentList.Add(previous!.ToString());
+        }
+        return start;
+    }
 }

@@ -84,10 +84,14 @@ internal static class PlaylistActivityCatalog
                 }
                 Guids("HideSeekObjectives", 17, "HideSeek"); Guids("Jobs", 18, "SeasonalJob");
                 foreach (string field in new[] { "TimeAttackObjectives", "DriftAttackObjectives", "DragMeetObjectives" }) Guids(field, 22, "HorizonLifeEvent");
-                foreach (string id in events.Where(n => Value(n, "EventType") == "MonthlyRival").Select(n => Value(n, "EventId"))) monthly.Add(Hash(Guid.Parse(id).ToString("D")));
+                var seasonMonthly = events.Where(n => Value(n, "EventType") == "MonthlyRival")
+                    .Select(n => Hash(Guid.Parse(Value(n, "EventId")).ToString("D"))).ToHashSet();
+                if (seasonMonthly.Count is < 1 or > 64 || seasons.Count > 0 && !monthly.SetEquals(seasonMonthly))
+                    throw new InvalidDataException("Incomplete or ambiguous monthly rivals schedule.");
+                monthly.UnionWith(seasonMonthly);
                 seasons.Add(new(index, activities.ToArray()));
             }
-            if (seasons.Count != 4 || seasons.Select(s => s.Index).Distinct().Count() != 4 || monthly.Count != 1)
+            if (seasons.Count != 4 || seasons.Select(s => s.Index).Distinct().Count() != 4)
                 throw new InvalidDataException("Incomplete or ambiguous Playlist schedule.");
             // Monthly points contribute to every season. Older saves may store
             // this shared result only beneath the season first visited.

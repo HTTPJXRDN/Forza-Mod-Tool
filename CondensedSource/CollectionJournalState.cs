@@ -111,7 +111,7 @@ public static partial class CollectionJournalState
         {
             var entry = entries[id];
             if (Completed(state.Payload, entry)) continue;
-            if (Automatic(entry.Definition)) { reason = "Category-completion bonuses are automatic. Complete their underlying challenges instead."; return false; }
+            if (Automatic(entry.Definition)) continue; // Eligibility is checked by the dependency graph below.
             Complete(state.Payload, entry, now);
             explicitCount++;
         }
@@ -178,7 +178,47 @@ public static partial class CollectionJournalState
             if (!allowedProperties.Contains(pair.Key) || next.TypeId is not (3 or 17) || next.RawValue.Length != 4) return false;
             propertyEdits.Add(new(pair.Value, (byte[])next.RawValue.Clone()));
         }
-        if (explicitCount == 0)
+        // Definition-backed category-count objectives form the journal's bonus
+        // dependency graph. Re-evaluate until no additional bonus is completed.
+        // Existing completed states and their timestamps are never re-awarded.
+        bool added;
+        int passes = 0;
+        do
+        {
+            added = false;
+            var counts = state.Entries.Where(e => Completed(state.Payload, e)).GroupBy(e => e.Definition.Category).ToDictionary(g => g.Key, g => (uint)g.Count());
+            var verifiedCounts = state.Entries.Where(e => e.Supported && Completed(state.Payload, e))
+                .GroupBy(e => e.Definition.Category).ToDictionary(g => g.Key, g => (uint)g.Count());
+            var deltas = ActiveCategories.Keys.ToDictionary(id => id, id => counts.GetValueOrDefault(id) - baselineCounts.GetValueOrDefault(id));
+            uint totalDelta = checked((uint)deltas.Values.Sum(v => (long)v));
+            foreach (var entry in state.Entries.Where(e => e.Supported && Automatic(e.Definition) && !Completed(state.Payload, e)))
+            {
+                bool complete = true;
+                for (int i = 0; i < entry.Objectives.Length; i++)
+                {
+                    var definition = entry.Definition.Objectives[i];
+                    uint delta = definition.GlobalDependency ? totalDelta : checked((uint)definition.Dependencies.Sum(id => (long)deltas.GetValueOrDefault(id)));
+                    var objective = entry.Objectives[i];
+                    if (objective.Tag is not (1 or 2 or 3)) { reason = "Unknown category dependency value layout."; return false; }
+                    // The event counter can lag behind saved completions. Keep
+                    // all historical progress, but use matching completed records
+                    // as a proven minimum; missing/changed definitions do not count.
+                    uint originalValue = U32(state.Record.Payload, objective.ValueOffset);
+                    if (delta > uint.MaxValue - originalValue) { reason = "Category bonus progress would overflow; nothing was changed."; return false; }
+                    uint verifiedCount = definition.GlobalDependency ? checked((uint)verifiedCounts.Values.Sum(v => (long)v))
+                        : checked((uint)definition.Dependencies.Sum(id => (long)verifiedCounts.GetValueOrDefault(id)));
+                    uint value = Math.Max(originalValue + delta, verifiedCount);
+                    Put32(state.Payload, objective.ValueOffset, value);
+                    state.Payload[objective.FlagOffset] = value >= definition.Target ? (byte)1 : (byte)0;
+                    complete &= value >= definition.Target;
+                }
+                if (!complete) continue;
+                Complete(state.Payload, entry, now, preserveObjectiveValues: true);
+                automaticCount++; added = true;
+            }
+            if (++passes > 100) { reason = "Journal dependency graph did not converge."; return false; }
+        } while (added);
+        if (explicitCount == 0 && automaticCount == 0)
         {
             var raceEdits = new List<(BinaryCareer.Record, byte[])>();
             if (racesUpdated > 0 || stuntKeys.Length > 0 || jobLevel > 0 || world.Changed || promo.Changed)
@@ -199,43 +239,6 @@ public static partial class CollectionJournalState
                 world.Boards, world.Mascots, world.Landmarks, world.Regions, world.Stories, promo.Cars.Length), propertyEdits, staged, promo.Database);
             return true;
         }
-        // Definition-backed category-count objectives form the journal's bonus
-        // dependency graph. Re-evaluate until no additional bonus is completed.
-        // Existing completed states and their timestamps are never re-awarded.
-        bool added;
-        int passes = 0;
-        do
-        {
-            added = false;
-            var counts = state.Entries.Where(e => Completed(state.Payload, e)).GroupBy(e => e.Definition.Category).ToDictionary(g => g.Key, g => (uint)g.Count());
-            var deltas = ActiveCategories.Keys.ToDictionary(id => id, id => counts.GetValueOrDefault(id) - baselineCounts.GetValueOrDefault(id));
-            uint totalDelta = checked((uint)deltas.Values.Sum(v => (long)v));
-            foreach (var entry in state.Entries.Where(e => e.Supported && Automatic(e.Definition) && !Completed(state.Payload, e)))
-            {
-                bool complete = true, affected = false;
-                for (int i = 0; i < entry.Objectives.Length; i++)
-                {
-                    var definition = entry.Definition.Objectives[i];
-                    uint delta = definition.GlobalDependency ? totalDelta : checked((uint)definition.Dependencies.Sum(id => (long)deltas.GetValueOrDefault(id)));
-                    var objective = entry.Objectives[i];
-                    if (objective.Tag is not (1 or 2 or 3)) { reason = "Unknown category dependency value layout."; return false; }
-                    // These objectives consume completion events. Preserve the
-                    // game's original counter, adding only newly completed IDs;
-                    // don't reset unrelated historical progress to a guessed count.
-                    uint originalValue = U32(state.Record.Payload, objective.ValueOffset);
-                    if (delta > uint.MaxValue - originalValue) { reason = "Category bonus progress would overflow; nothing was changed."; return false; }
-                    uint value = originalValue + delta;
-                    affected |= delta > 0;
-                    Put32(state.Payload, objective.ValueOffset, value);
-                    state.Payload[objective.FlagOffset] = value >= definition.Target ? (byte)1 : (byte)0;
-                    complete &= value >= definition.Target;
-                }
-                if (!complete || !affected) continue;
-                Complete(state.Payload, entry, now, preserveObjectiveValues: true);
-                automaticCount++; added = true;
-            }
-            if (++passes > 100) { reason = "Journal dependency graph did not converge."; return false; }
-        } while (added);
         staged.Career!.ReplacePayload(state.Record, state.Payload);
         if (!TryState(staged, out var verified, out reason) || !verified!.Metadata.AsSpan().SequenceEqual(state.Metadata)) return false;
         var points = Points(verified);

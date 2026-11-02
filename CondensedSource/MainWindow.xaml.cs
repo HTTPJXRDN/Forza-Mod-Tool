@@ -81,6 +81,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         ApplyAppIcon();
+        ContentRendered += ShowUpdateChangesOnRestart;
 
         var doc = new FlowDocument { PagePadding = new Thickness(0) };
         _logPara = new Paragraph { Margin = new Thickness(0), LineHeight = 18 };
@@ -194,6 +195,16 @@ public partial class MainWindow : Window
     {
         ProfileTemplateRow.Visibility = Visibility.Collapsed;
         DbTemplateRow.Visibility = Visibility.Visible;
+        if (StringTableDocument.IsTable(path) || StringTableDocument.IsDocument(path))
+        {
+            _pendingInput = path;
+            DbTemplateRow.Visibility = Visibility.Collapsed;
+            StagedText.Text = $"Staged: {Path.GetFileName(path)} — " +
+                (StringTableDocument.IsTable(path) ? "Decrypt to editable string-table JSON" : "Re-encrypt to rebuild the string table");
+            StagedText.Visibility = Visibility.Visible;
+            Status("String table staged.");
+            return;
+        }
         if (MotorsportTrackArchive.IsExtractOnlyFolder(path))
         {
             _pendingInput = path; // Keep it staged so buttons cannot fall back to an older SQLite.
@@ -300,6 +311,15 @@ public partial class MainWindow : Window
             Status("Nothing to decrypt.");
             return;
         }
+        if (StringTableDocument.IsTable(_pendingInput))
+        {
+            try { SetCryptoBusy(true); await DecodeStringTableFlow(_pendingInput); }
+            catch (Exception ex) { Fail(ex, _pendingInput); }
+            finally { SetCryptoBusy(false); }
+            return;
+        }
+        if (StringTableDocument.IsDocument(_pendingInput))
+        { Log("The string table is already JSON. Use Re-encrypt to rebuild it."); return; }
         if (MotorsportTrackArchive.IsExtractOnlyFolder(_pendingInput))
         {
             Log("This is an extract-only output folder; drop the original ZIP to extract again.");
@@ -374,6 +394,15 @@ public partial class MainWindow : Window
             Status("Nothing to re-encrypt.");
             return;
         }
+        if (StringTableDocument.IsDocument(src))
+        {
+            try { SetCryptoBusy(true); await RebuildStringTableFlow(src); }
+            catch (Exception ex) { Fail(ex, src); }
+            finally { SetCryptoBusy(false); }
+            return;
+        }
+        if (StringTableDocument.IsTable(src))
+        { Log("Use Decrypt to turn the string table into editable JSON first."); return; }
         if (Fh5ProfileCrypto.IsDatabaseExport(src) || Fh5ProfileCrypto.IsPlainPayload(src) || Fh5ProfileCrypto.IsEncryptedProfile(src))
         {
             Log("FH5 saves support decryption only. Save re-encryption and edited-save export are disabled; no output written.");
@@ -1013,16 +1042,19 @@ public partial class MainWindow : Window
         Status("Preparing car DB import...");
         using var baseDb = await Task.Run(() => GameDbSqliteBridge.Materialize(basePath, allowMotorsport: true));
         using var donorDb = await Task.Run(() => GameDbSqliteBridge.Materialize(donorPath, allowMotorsport: true));
-        var cars = await Task.Run(() => CarRelatedDbExport.ReadCarDonor(donorDb.SqlitePath));
-        var convertedReplacement = await Task.Run(() => ConvertedCarReplacementDb.Read(donorDb.SqlitePath));
+        using var compatibleDonor = await Task.Run(() => CarDonorSchema.Prepare(baseDb.SqlitePath, donorDb.SqlitePath, FH6LocalCryptoTool.TempWorkspace.Root));
+        foreach (string change in compatibleDonor.Changes) Log(change);
+        var cars = await Task.Run(() => CarRelatedDbExport.ReadCarDonor(compatibleDonor.Path));
+        var convertedReplacement = await Task.Run(() => ConvertedCarReplacementDb.Read(compatibleDonor.Path));
+        bool portableOptions = await Task.Run(() => CarDonorSchema.IsPortableOptions(compatibleDonor.Path));
         var carIds = cars.Select(c => c.Id).ToArray();
         string carLabel = cars.Count == 1 ? $"car {cars[0].Id}" : $"{cars.Count:n0} cars";
         Status($"Comparing rows for {carLabel}...");
-        var preview = await Task.Run(() => Merge.PreviewMods(baseDb.SqlitePath, donorDb.SqlitePath));
+        var preview = await Task.Run(() => Merge.PreviewMods(baseDb.SqlitePath, compatibleDonor.Path));
         if (preview.Warnings.Count > 0)
             throw new InvalidDataException("Some donor tables could not be compared; import stopped to avoid a partial car: " +
                                            string.Join("; ", preview.Warnings.Take(3)));
-        var picker = new CarRelatedImportWindow(cars, preview, basePath, donorPath, convertedReplacement is not null) { Owner = this };
+        var picker = new CarRelatedImportWindow(cars, preview, basePath, donorPath, convertedReplacement is not null, portableOptions) { Owner = this };
         if (picker.ShowDialog() != true) { Status("Car import cancelled."); return; }
         var selected = preview.Tables.SelectMany(t => t.Rows)
             .Where(r => picker.ReplaceConflicts || !r.IsConflict).ToArray();

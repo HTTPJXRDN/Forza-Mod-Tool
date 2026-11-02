@@ -91,7 +91,7 @@ public static partial class PlaylistPointsState
         try
         {
             var r = new Reader(bytes); uint version = r.U32();
-            if (version is not (2 or 4)) return false;
+            if (version is not (2 or 4 or 5)) return false;
             // Season reward maps, then Series reward maps. Each reward has a
             // saved u64 ID and three acquisition flags; never rewrite any flag.
             uint count = r.Count(MaxSeries); var roots = new HashSet<uint>();

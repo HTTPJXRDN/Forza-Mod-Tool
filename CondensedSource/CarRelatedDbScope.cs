@@ -43,6 +43,9 @@ internal static class CarRelatedDbScope
         var antiSway = Read("List_UpgradeAntiSwayFront", "AntiSwayPhysicsID", "Ordinal" + comparison);
         antiSway.UnionWith(Read("List_UpgradeAntiSwayRear", "AntiSwayPhysicsID", "Ordinal" + comparison));
         var wheels = Read("Data_Car", "StockWheelID", "Id" + comparison);
+        // Wheel catalogs are global users too. A wheel can remain selectable
+        // through an annotation even when no unselected car uses it as stock.
+        if (otherCars) wheels.UnionWith(Read("WheelAnnotations", "WheelID", "1"));
         var parts = new HashSet<long>();
         var strings = new HashSet<long>();
         string? For(string table, List<string> cols) => Scope(table, cols, comparison, bodies, engines,

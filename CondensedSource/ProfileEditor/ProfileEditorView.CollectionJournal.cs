@@ -71,7 +71,12 @@ public partial class ProfileEditorView
             grid.Columns.Add(new DataGridTextColumn { Header = "Compatibility", Binding = new Binding("Compatibility"), Width = 230 });
         OverviewPanel.Children.Add(grid);
         var complete = TestButton("CompleteJournalSelectionButton", "Complete selected challenges", journal.CanEdit);
-        OverviewPanel.Children.Add(complete);
+        var repair = TestButton("RepairJournalBonusesButton", "Repair earned bonuses", journal.CanEdit);
+        repair.Margin = new Thickness(8, 10, 0, 0);
+        repair.ToolTip = "Check all category bonuses and repair those whose requirements are complete. No row selection needed.";
+        var actions = new WrapPanel();
+        actions.Children.Add(complete); actions.Children.Add(repair);
+        OverviewPanel.Children.Add(actions);
         if (journal.PartialCatalog)
         {
             var details = new TextBox
@@ -117,25 +122,34 @@ public partial class ProfileEditorView
             journal = CollectionJournalState.ReadForDisplay(_container);
             status.Text = StatusText(); Categories(); Render();
         };
-        complete.Click += (_, _) =>
+        void ApplyJournalChanges(bool repairBonuses)
         {
             try
             {
-                var selected = grid.SelectedItems.OfType<CollectionJournalState.Row>().ToArray();
-                // Ctrl+A also selects bonus rows; those must be earned through their dependencies, not awarded directly.
-                ulong[] ids = selected.Where(row => row.Supported && !row.Automatic).Select(row => row.Id).ToArray();
+                if (repairBonuses) journal = CollectionJournalState.ReadForDisplay(_container);
+                var selected = repairBonuses
+                    ? journal.Rows.Where(row => row.StateKnown && row.Supported && row.Automatic && !row.Completed).ToArray()
+                    : grid.SelectedItems.OfType<CollectionJournalState.Row>().ToArray();
+                // Selecting a bonus rechecks its prerequisites; it never bypasses them.
+                ulong[] ids = selected.Where(row => row.Supported).Select(row => row.Id).ToArray();
                 int unavailable = selected.Count(row => !row.Supported);
                 if (!journal.CanEdit) { Log("Journal is read-only. See compatibility details below the list.", "info"); return; }
+                if (repairBonuses && ids.Length == 0)
+                {
+                    Log("No supported unfinished bonuses need checking.", "info"); return;
+                }
                 if (selected.Length > 0 && ids.Length == 0)
                 {
-                    Log("Select supported unfinished challenges. Missing/changed definitions stay read-only; bonuses are automatic.", "info");
+                    Log("Select supported challenges or earned bonuses. Missing/changed definitions stay read-only.", "info");
                     return;
                 }
-                CaptureJournalDatabase();
+                // Bonus-only repairs do not read or change the garage database.
+                if (!repairBonuses) CaptureJournalDatabase();
                 if (!CollectionJournalState.TryPreview(_container, ids, out var preview, out string error))
                     throw new InvalidOperationException(error);
-                if (!preview.Changed) { Log("Selected journal challenges were already completed; no points were added", "info"); return; }
-                if (!_confirmUnlockTest($"Complete {preview.SelectedCompleted} challenge(s) and {preview.AutomaticCompleted} bonus(es)? "
+                if (!preview.Changed) { Log("No changes needed. Bonuses require their underlying challenges to be completed; no points were added.", "info"); return; }
+                if (!_confirmUnlockTest((repairBonuses ? $"Repair {preview.AutomaticCompleted} earned bonus(es)? "
+                    : $"Complete {preview.SelectedCompleted} challenge(s) and {preview.AutomaticCompleted} bonus(es)? ")
                     + (preview.RacesUpdated > 0 ? $"Sync {preview.RacesUpdated} linked race result(s). " : "")
                     + (preview.PrStuntsUpdated > 0 ? $"Sync {preview.PrStuntsUpdated} PR stunt(s); new PBs use the selected star cutoff + 0–2%, preserving better scores. " : "")
                     + (preview.JobLevel > 0 ? $"Set Food Delivery to level {preview.JobLevel}, with matching Job XP. " : "")
@@ -160,10 +174,13 @@ public partial class ProfileEditorView
                 if (changed.BoardsUpdated + changed.MascotsUpdated + changed.LandmarksUpdated + changed.StoriesUpdated > 0 || changed.RegionsUpdated)
                     Log($"World progress: {changed.BoardsUpdated} boards, {changed.MascotsUpdated} mascots, {changed.LandmarksUpdated} landmarks, "
                         + $"regions {(changed.RegionsUpdated ? "revealed" : "unchanged")}, {changed.StoriesUpdated} Story chapter(s). Story finishing-time PBs were not edited.", "info");
-                StatusLine.Text = "Journal completion and progression applied to working copy — click Export save";
+                StatusLine.Text = repairBonuses ? "Earned bonuses repaired in working copy — click Export save"
+                    : "Journal completion and progression applied to working copy — click Export save";
             }
-            catch (Exception ex) { Fail("complete Collection Journal challenges", ex); }
-        };
+            catch (Exception ex) { Fail(repairBonuses ? "repair earned Journal bonuses" : "complete Collection Journal challenges", ex); }
+        }
+        complete.Click += (_, _) => ApplyJournalChanges(false);
+        repair.Click += (_, _) => ApplyJournalChanges(true);
     }
 }
 #endif

@@ -51,7 +51,7 @@
   <GroupStyle x:Key="GarageManufacturerGroup">
    <GroupStyle.ContainerStyle><Style TargetType="GroupItem"><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="GroupItem">
     <Expander Tag="Garage" Loaded="Manufacturer_Loaded" Foreground="#F4F4F6" IsExpanded="False" Margin="0,2,0,4">
-     <Expander.Header><DockPanel MinWidth="200"><Button Content="Select removable" Click="SelectGarageManufacturer_Click" DockPanel.Dock="Right" Padding="8,3" Margin="12,0,4,0" ToolTip="Select all removable instances in this manufacturer group; protected/unknown cars are skipped."/><TextBlock FontWeight="SemiBold"><Run Text="{Binding Name, Mode=OneWay}"/><Run Text="  ("/><Run Text="{Binding ItemCount, Mode=OneWay}"/><Run Text=")"/></TextBlock></DockPanel></Expander.Header>
+     <Expander.Header><DockPanel MinWidth="200"><Button Content="Select removable" Click="SelectGarageManufacturer_Click" DockPanel.Dock="Right" Padding="8,3" Margin="12,0,4,0" ToolTip="Select removable cars in this group, including unknown models. Protected cars are skipped."/><TextBlock FontWeight="SemiBold"><Run Text="{Binding Name, Mode=OneWay}"/><Run Text="  ("/><Run Text="{Binding ItemCount, Mode=OneWay}"/><Run Text=")"/></TextBlock></DockPanel></Expander.Header>
      <ItemsPresenter/>
     </Expander>
    </ControlTemplate></Setter.Value></Setter></Style></GroupStyle.ContainerStyle>
@@ -91,6 +91,7 @@
    <StackPanel Grid.Row="1" Margin="0,0,0,10">
     <TextBlock x:Name="LoadedPath" Text="Open or drop a C_ProfileData save here. The original file is never overwritten." Foreground="#9C9CA2" TextWrapping="Wrap"/>
     <TextBlock x:Name="CatalogLabel" Text="Loading embedded FH6 car names…" Foreground="#9C9CA2" Margin="0,3,0,0" TextWrapping="Wrap"/>
+    <WrapPanel Margin="0,4,0,0"><Button x:Name="ChooseCatalogButton" Content="Choose GameDB…" Click="CatalogFolder_Click" Padding="8,4" ToolTip="Load the complete FH6 GameDB used by this save for car names, manufacturers and stock parts."/><Button x:Name="AutoCatalogButton" Content="Auto-find GameDB" Click="CatalogAuto_Click" Padding="8,4" ToolTip="Find the installed FH6 GameDB. MediaPC takes priority over media."/></WrapPanel>
     <WrapPanel Margin="0,5,0,0"><Button Content="Thumbnail cache folder…" Click="ThumbnailFolder_Click" Padding="8,4"/><Button Content="Auto-find thumbnails" Click="StockThumbnailAuto_Click" Padding="8,4"/><Button Content="Stock thumbnails folder…" Click="StockThumbnailFolder_Click" Padding="8,4"/><StackPanel MaxWidth="420"><TextBlock x:Name="ThumbnailCacheLabel" Text="Actual garage previews are read from the game's local cache." FontSize="11" Foreground="#9C9CA2" TextWrapping="Wrap"/><TextBlock x:Name="StockThumbnailLabel" Text="Finding stock thumbnails • cached images first" FontSize="11" Foreground="#9C9CA2" TextWrapping="Wrap"/></StackPanel></WrapPanel>
    </StackPanel>
    <Grid Grid.Row="2" Margin="0,0,0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox x:Name="GarageSearch" TextChanged="Search_Changed" ToolTip="Search owned cars by name, year, car ID, or garage ID."/><TextBlock x:Name="CountLabel" Grid.Column="1" Text="No save loaded" Margin="12,0,0,0" Foreground="#9C9CA2"/></Grid>

@@ -27,7 +27,7 @@ public static partial class PlaylistPointsState
                 // opened, before any score/activity maps exist for it.
                 if (tracks.Values.Sum(v => (long)v) != maximum || !maxima.TryAdd(series, (maximum, tracks))) return false;
             }
-            // All observed v2/v4 saves have an empty reserved Series-wide map.
+            // Verified v2/v4/v5 saves have an empty reserved Series-wide map.
             // Do not assume a new populated layout has the same season grammar.
             if (r.U32() != 0) return false;
             int start = r.Offset; count = r.Count(MaxSeries); var seriesProgress = new List<SeriesProgress>(); var seriesIds = new HashSet<uint>();

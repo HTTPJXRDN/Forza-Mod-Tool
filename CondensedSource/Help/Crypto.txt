@@ -13,12 +13,14 @@ File types
 - Settings: supported INI, XML, JSON and text files can be decrypted and rebuilt.
 - ZIPs, including audio: Decrypt extracts them. Keep the original ZIP and metadata in that folder. Drop the folder back to rebuild it; do not add or remove files. External manifests are not updated.
 - SKELD: decode to JSON, edit, then rebuild.
+- String tables: drop a .str and Decrypt. Edit or add keys in the JSON's Entries section, then drop the .str.json and Re-encrypt. Keep the other fields. Rename the rebuilt file to its original .str name when installing.
 - Saves: Decrypt writes the complete .decrypted profile. FH6 can be re-encrypted with its original save template. FH5 is decrypt-only.
 
 Merging
 - Put the receiving DB on top and the donor below, then Merge. Review conflicts before saving.
 - For Merge updated DB, put the NEW clean DB on top and OLD modded DB below. Choose the old version's clean DB if asked.
 - Both DBs must be from the same game.
+- After Merge updated DB, update any stringtables and zipmanifest.xml overrides in MediaPC using the new game files. Also update MediaPC\cars\AnimResourceConfig.txt if you have an override. Keep your custom entries. The DB merge does not update these files.
 
 Sharing cars
 - Export Car Related DB saves the selected cars and their related DB records.

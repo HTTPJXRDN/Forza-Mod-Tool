@@ -12,9 +12,14 @@ internal sealed class UpgradeStringTable
     readonly int headerSize;
     readonly Encoding encoding;
     readonly int terminator;
+    readonly string tableName;
     readonly List<Block> blocks = new();
     internal IReadOnlyDictionary<uint, string> Values => blocks[0].Values;
     internal ushort Version => BinaryPrimitives.ReadUInt16LittleEndian(raw);
+    internal string TableName => tableName;
+    internal IReadOnlyDictionary<string, string> Entries => Values.ToDictionary(p =>
+        blocks.Count > 1 && blocks[1].Values.TryGetValue(p.Key, out var name) && Hash(name) == p.Key
+            ? name : "#" + p.Key.ToString("X8"), p => p.Value, StringComparer.Ordinal);
 
     internal static uint Hash(string text)
     {
@@ -24,8 +29,11 @@ internal sealed class UpgradeStringTable
     }
     internal static string Reference(string key) => "_&" + (((ulong)Hash("Upgrades") << 32) | Hash(key)).ToString(System.Globalization.CultureInfo.InvariantCulture);
 
-    internal UpgradeStringTable(byte[] bytes)
+    internal UpgradeStringTable(byte[] bytes) : this(bytes, "Upgrades") { }
+
+    internal UpgradeStringTable(byte[] bytes, string tableName)
     {
+        this.tableName = tableName;
         raw = bytes;
         if (raw.Length < 140) throw new InvalidDataException("Truncated Upgrades.str.");
         ushort version = BinaryPrimitives.ReadUInt16LittleEndian(raw);
@@ -33,8 +41,8 @@ internal sealed class UpgradeStringTable
             _ => throw new InvalidDataException("Unsupported Upgrades.str version.") };
         terminator = version == 0x400 ? 2 : 1;
         int nameEnd = Array.IndexOf(raw, (byte)0, 2, 126);
-        if (nameEnd < 0 || Encoding.ASCII.GetString(raw, 2, nameEnd - 2) != "Upgrades")
-            throw new InvalidDataException("Expected the Upgrades string table.");
+        if (nameEnd < 0 || Encoding.ASCII.GetString(raw, 2, nameEnd - 2) != tableName)
+            throw new InvalidDataException("Expected the " + tableName + " string table.");
         int count = BinaryPrimitives.ReadInt16LittleEndian(raw.AsSpan(130));
         if (count is not (1 or 2)) throw new InvalidDataException("Invalid Upgrades.str section count.");
         headerSize = 132 + count * 4;
@@ -70,6 +78,53 @@ internal sealed class UpgradeStringTable
         if (end != raw.Length) throw new InvalidDataException("Trailing string-table data.");
     }
     int Read(int offset) => BinaryPrimitives.ReadInt32LittleEndian(raw.AsSpan(offset));
+
+    internal byte[] Rewrite(IReadOnlyDictionary<string, string> entries)
+    {
+        if (entries.Count > 100_000) throw new InvalidDataException("Too many string-table entries.");
+        var texts = new Dictionary<uint, string>(); var names = new Dictionary<uint, string>();
+        foreach (var (key, text) in entries)
+        {
+            if (string.IsNullOrEmpty(key) || key.Length > 512 || text == null || text.Length > 262_144 || key.Contains('\0') || text.Contains('\0'))
+                throw new InvalidDataException("String-table keys and text must not contain NUL characters or exceed size limits.");
+            uint id = 0;
+            bool hashed = key.StartsWith('#') && key.Length == 9 && uint.TryParse(key.AsSpan(1), System.Globalization.NumberStyles.HexNumber,
+                System.Globalization.CultureInfo.InvariantCulture, out id);
+            if (!hashed) id = Hash(key);
+            string name = hashed && blocks.Count > 1 && blocks[1].Values.TryGetValue(id, out var oldName) ? oldName : key;
+            if (blocks.Count > 1 && hashed && !blocks[1].Values.ContainsKey(id))
+                throw new InvalidDataException("Use a key name for new entries in this table, rather than a hash: " + key);
+            if (blocks.Count > 1 && blocks[1].Values.TryGetValue(id, out var existing) && existing != name)
+                throw new InvalidDataException("A string key collides with an existing key: " + key);
+            if (!texts.TryAdd(id, text)) throw new InvalidDataException("Two string keys have the same hash: " + key);
+            names.Add(id, name);
+        }
+        if (texts.Count == Values.Count && texts.All(p => Values.TryGetValue(p.Key, out var text) && text == p.Value))
+            return raw.ToArray();
+        using var output = new MemoryStream(); using var writer = new BinaryWriter(output, Encoding.UTF8, true);
+        writer.Write(raw, 0, headerSize);
+        for (int section = 0; section < blocks.Count; section++)
+        {
+            var values = section == 0 ? texts : names;
+            using var strings = new MemoryStream(); var pairs = new List<(uint Id, int Offset)>();
+            foreach (var pair in values.OrderBy(p => p.Key))
+            {
+                pairs.Add((pair.Key, checked((int)strings.Length)));
+                strings.Write(encoding.GetBytes(pair.Value)); strings.Write(new byte[terminator]);
+                if (strings.Length > 16_777_216) throw new InvalidDataException("String table exceeds the size limit.");
+            }
+            long start = output.Position;
+            output.Position = 132 + section * 4; writer.Write(checked((int)start)); output.Position = start;
+            writer.Write(checked(12 + pairs.Count * 8 + (int)strings.Length - blocks[section].SizeBias));
+            writer.Write(checked((int)strings.Length)); writer.Write(pairs.Count);
+            foreach (var pair in pairs) { writer.Write(pair.Id); writer.Write(pair.Offset); }
+            strings.Position = 0; strings.CopyTo(output);
+        }
+        byte[] result = output.ToArray(); var verified = new UpgradeStringTable(result, tableName);
+        if (verified.Values.Count != texts.Count || texts.Any(p => verified.Values.GetValueOrDefault(p.Key) != p.Value))
+            throw new InvalidDataException("The rebuilt string table did not pass readback checks.");
+        return result;
+    }
 
     internal byte[] Add(IReadOnlyDictionary<string, string> additions)
     {
@@ -109,7 +164,7 @@ internal sealed class UpgradeStringTable
             foreach (var pair in pairs) { writer.Write(pair.Key); writer.Write(pair.Offset); }
             strings.Position = 0; strings.CopyTo(output);
         }
-        byte[] result = output.ToArray(); var verified = new UpgradeStringTable(result);
+        byte[] result = output.ToArray(); var verified = new UpgradeStringTable(result, tableName);
         for (int section = 0; section < blocks.Count; section++)
             foreach (var old in blocks[section].Values)
                 if (!verified.blocks[section].Values.TryGetValue(old.Key, out string? text) || text != old.Value)
@@ -122,7 +177,7 @@ internal sealed class UpgradeStringTable
 
     internal byte[] Merge(byte[] additional)
     {
-        var other = new UpgradeStringTable(additional);
+        var other = new UpgradeStringTable(additional, tableName);
         if (Version != other.Version) throw new InvalidDataException("The export folder contains string tables from another game. Choose a separate export folder.");
         var additions = new Dictionary<string, string>();
         foreach (var entry in other.Values)

@@ -11,9 +11,11 @@ public sealed record GarageCarDefinition(long Id, string MediaName, long Year, b
     public bool IsFh2 { get; init; }
     public string StockConfigurationWarning { get; init; } = "";
     public string Manufacturer { get; init; } = "Unknown manufacturer";
+    public string ResolvedName { get; init; } = "";
+    public bool UseDatabaseYear { get; init; }
     readonly string _friendlyName = FH6CarEditor.Naming.Friendly(MediaName);
-    public string Name => _friendlyName;
-    public long DisplayYear => IsFh2 ? Year : FH6CarEditor.CarDisplayNames.Year(Id, MediaName, Year);
+    public string Name => ResolvedName.Length != 0 ? ResolvedName : _friendlyName;
+    public long DisplayYear => IsFh2 || UseDatabaseYear ? Year : FH6CarEditor.CarDisplayNames.Year(Id, MediaName, Year);
     public bool IsInitialDrive => !IsFh2 && FH6CarEditor.CarDisplayNames.IsInitialDrive(Id, MediaName);
     public bool IsTraffic => MediaName.Contains("_Traffic_", StringComparison.OrdinalIgnoreCase);
     // These traffic variants have ambiguous stock side-skirt choices. Retain their
@@ -32,13 +34,15 @@ public sealed class GarageCarCatalog : IDisposable
     public IReadOnlyList<GarageCarDefinition> Cars { get; }
     public string Label { get; }
     public ForzaGame Game { get; }
+    public string SourcePath { get; private init; } = "";
 
-    GarageCarCatalog(string path, string label, ForzaGame game = ForzaGame.Horizon6)
+    GarageCarCatalog(string path, string label, ForzaGame game = ForzaGame.Horizon6, string? source = null)
     {
         _path = path; Label = label; Game = game; _db = Open(path, SqliteOpenMode.ReadOnly);
         try {
-            if (game == ForzaGame.Horizon2 && GameDbIdentity.Detect(path) != ForzaGame.Horizon2)
-                throw new InvalidDataException("Not a verified FH2 car catalog.");
+            if (GameDbIdentity.Detect(path) != game)
+                throw new InvalidDataException("Choose a complete " + GameDbIdentity.DisplayName(game) + " GameDB for this garage.");
+            var labels = source == null ? null : new GarageCatalogLabels(source);
             foreach (var table in Read("SELECT name FROM sqlite_master WHERE type='table' AND (name IN ('Data_Car','List_CarMake') OR name LIKE 'List_Upgrade%')")) {
                 string name = (string)table["name"];
                 _columns[name] = Read("PRAGMA table_info(" + Q(name) + ")").Select(c => (string)c["name"]).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -62,16 +66,24 @@ public sealed class GarageCarCatalog : IDisposable
                     name = System.Text.RegularExpressions.Regex.Replace(name, "([A-Z])([A-Z][a-z])", "$1 $2");
                     string friendly = FH6CarEditor.Naming.Friendly(code);
                     if (friendly.Length > 0 && friendly != code) name = friendly;
-                    if (display.Length > 0 && !display.StartsWith("_&")) name = display;
+                    if (labels?.Resolve(display, "List_CarMake") is string translated) name = translated;
+                    else if (display.Length > 0 && !display.StartsWith("_&")) name = display;
                     makes[L(make["ID"])] = name.Length > 0 ? name : "Unknown manufacturer";
                 }
             }
             string makeId = Has("Data_Car", "MakeID") ? "MakeID" : "0";
-            Cars = Read($"SELECT Id,MediaName,Year,{locked} locked,{makeId} makeId FROM Data_Car {drive}")
-                .Select(c => new GarageCarDefinition(L(c["Id"]), Convert.ToString(c["MediaName"])!, L(c["Year"]), L(c["locked"]) != 0) {
-                    IsFh2 = game == ForzaGame.Horizon2,
-                    Manufacturer = game == ForzaGame.Horizon2 ? makes.GetValueOrDefault(L(c["makeId"]), "Unknown manufacturer") :
-                        FH6CarEditor.CarDisplayNames.Manufacturer(L(c["Id"]), Convert.ToString(c["MediaName"])!, makes.GetValueOrDefault(L(c["makeId"]), "Unknown manufacturer"))
+            string displayName = Has("Data_Car", "DisplayName") ? "DisplayName" : "''";
+            Cars = Read($"SELECT Id,MediaName,Year,{locked} locked,{makeId} makeId,{displayName} display FROM Data_Car {drive}")
+                .Select(c => {
+                    string media = Convert.ToString(c["MediaName"])!;
+                    string make = makes.GetValueOrDefault(L(c["makeId"]), "Unknown manufacturer");
+                    if (source == null && game != ForzaGame.Horizon2) make = FH6CarEditor.CarDisplayNames.Manufacturer(L(c["Id"]), media, make);
+                    string? model = labels?.Resolve(Convert.ToString(c["display"]) ?? "", "Data_Car");
+                    string name = model == null ? FriendlyName(media, make) : make == "Unknown manufacturer" || model.StartsWith(make + " ", StringComparison.OrdinalIgnoreCase) ? model : make + " " + model;
+                    return new GarageCarDefinition(L(c["Id"]), media, L(c["Year"]), L(c["locked"]) != 0) {
+                        IsFh2 = game == ForzaGame.Horizon2, UseDatabaseYear = source != null,
+                        Manufacturer = make, ResolvedName = source == null ? "" : name
+                    };
                 })
                 .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase).ThenBy(c => c.Year).ToArray();
             if (game == ForzaGame.Horizon2)
@@ -89,12 +101,12 @@ public sealed class GarageCarCatalog : IDisposable
         try {
             // Version stamps are opaque IDs, not sortable release numbers. Explicitly
             // designate the newest verified clean FH6 catalog, retaining older baselines.
-            string resource = game == ForzaGame.Horizon2 ? "FH6LocalCryptoTool.gamedbRC.stock.fh2-2067577858.sqlite.gz" : "FH6LocalCryptoTool.gamedbRC.stock.661353983.sqlite.gz";
+            string resource = game == ForzaGame.Horizon2 ? "FH6LocalCryptoTool.gamedbRC.stock.fh2-2067577858.sqlite.gz" : "FH6LocalCryptoTool.gamedbRC.stock.fh6-n120540163.sqlite.gz";
             using var input = Assembly.GetExecutingAssembly().GetManifestResourceStream(resource)
                 ?? throw new InvalidDataException("The embedded car catalog is missing.");
             using var gzip = new GZipStream(input, CompressionMode.Decompress);
             using (var output = new FileStream(path, FileMode.CreateNew)) gzip.CopyTo(output);
-            return new(path, game == ForzaGame.Horizon2 ? "Embedded FH2 catalog (354 models)" : "Embedded FH6 catalog (682 models; build 661353983)", game);
+            return new(path, game == ForzaGame.Horizon2 ? "Embedded FH2 catalog (354 models)" : "Embedded FH6 catalog (691 models; build -120540163)", game);
         } catch { Cleanup(path); throw; }
     }
 
@@ -106,8 +118,17 @@ public sealed class GarageCarCatalog : IDisposable
             using (var input = Open(materialized.SqlitePath, SqliteOpenMode.ReadOnly))
             using (var output = Open(path, SqliteOpenMode.ReadWriteCreate)) input.BackupDatabase(output);
             materialized.VerifySourceUnchanged();
-            return new(path, Path.GetFileName(source));
+            return new(path, Path.GetFileName(source), source: source) { SourcePath = Path.GetFullPath(source) };
         } catch { Cleanup(path); throw; }
+    }
+
+    static string FriendlyName(string media, string manufacturer)
+    {
+        string name = FH6CarEditor.Naming.Friendly(media);
+        string code = media.Split('_')[0];
+        if (manufacturer != "Unknown manufacturer" && code.Length > 0 && name.StartsWith(code + " ", StringComparison.Ordinal))
+            return manufacturer + name[code.Length..];
+        return name;
     }
 
     internal static string Q(string value) => "\"" + value.Replace("\"", "\"\"") + "\"";

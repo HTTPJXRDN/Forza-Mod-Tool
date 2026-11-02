@@ -48,6 +48,8 @@ public static class GameDbIdentity
             if (donorTag == CarRelatedDbExport.ApplicationId || donorTag == ConvertedCarReplacementDb.ApplicationId)
             {
                 tag.CommandText = "PRAGMA user_version"; int value = Convert.ToInt32(tag.ExecuteScalar());
+                if (value == CarDonorSchema.PortableOptionsVersion)
+                    declared = ForzaGame.Horizon6;
                 if ((value & unchecked((int)0xFFFFFF00)) == 0x46010000 && Enum.IsDefined(typeof(ForzaGame), value & 255))
                     declared = (ForzaGame)(value & 255);
             }

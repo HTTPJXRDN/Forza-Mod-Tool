@@ -40,6 +40,8 @@ public partial class GarageViewerView : UserControl
     GarageProfileSession? _session;
     readonly Fh2SaveHost _fh2Host;
     GarageCarCatalog? _catalog;
+    string _catalogMessage = "";
+    string? _catalogPreference;
     GarageThumbnailCache? _thumbnails;
     CarThumbnailLibrary? _stockThumbnails;
     GarageThumbnailResolver? _resolver;
@@ -110,7 +112,7 @@ public partial class GarageViewerView : UserControl
         _owner = Window.GetWindow(this);
         if (_owner != null) { _owner.Closing += Owner_Closing; _owner.Closed += Owner_Closed; }
         await RunAsync(() => {
-            _catalog = GarageCarCatalog.Embedded();
+            ReloadCatalog();
             _stockThumbnails = FindStockThumbnails();
             if(Directory.Exists(GarageThumbnailCache.DefaultDirectory)) {
                 try { _thumbnails=new GarageThumbnailCache(GarageThumbnailCache.DefaultDirectory);_thumbnailMessage=$"Garage thumbnail cache: {_thumbnails.Count:N0} references (read-only)"; }
@@ -141,6 +143,8 @@ public partial class GarageViewerView : UserControl
         ClearCarFields();
         await RunAsync(() => {
             var next = GarageProfileSession.Load(path);
+            try { ReloadCatalog(next.Entries().Select(c => c.CarId).ToArray()); }
+            catch { next.Dispose(); throw; }
             var previous = _session; _session = next; previous?.Dispose();
         }, "Reading garage on a private copy…");
     }
@@ -151,6 +155,51 @@ public partial class GarageViewerView : UserControl
         if (dialog.ShowDialog() == true) await LoadProfileAsync(dialog.FileName);
     }
     async void LoadFh2_Click(object sender, RoutedEventArgs e) { if (!_busy) await _fh2Host.ChooseAsync(); }
+    static string CatalogSourceSetting => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ForzaModTool", "garage-game-db.txt");
+    string? CatalogPreference()
+    {
+        if (_catalogPreference != null) return _catalogPreference;
+        try { return File.Exists(CatalogSourceSetting) && new FileInfo(CatalogSourceSetting).Length <= 4096 ? File.ReadAllText(CatalogSourceSetting).Trim() : null; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
+    }
+    void ReloadCatalog(IReadOnlyCollection<long>? ownedCars = null)
+    {
+        var next = GarageCatalogSource.Load(CatalogPreference(), ThumbnailInstallDiscovery.GameRoots(false), out string message,
+            ownedCars ?? _session?.Entries().Select(c => c.CarId).ToArray());
+        var previous = _catalog; _catalog = next; _catalogMessage = message; previous?.Dispose();
+    }
+    async Task LoadCatalogAsync(string path, bool remember = true)
+    {
+        if (_busy || !TryApplyCarFields()) return;
+        await RunAsync(() => {
+            var next = GarageCarCatalog.Load(path);
+            try
+            {
+                if (remember)
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(CatalogSourceSetting)!);
+                    File.WriteAllText(CatalogSourceSetting, Path.GetFullPath(path));
+                }
+            }
+            catch { next.Dispose(); throw; }
+            _catalogPreference = Path.GetFullPath(path);
+            var previous = _catalog; _catalog = next; _catalogMessage = "Selected GameDB"; previous?.Dispose();
+        }, "Reading GameDB car names and stock parts…");
+    }
+    async void CatalogFolder_Click(object sender, RoutedEventArgs e)
+    {
+        if (_busy) return;
+        var dialog = new OpenFileDialog { Title = "Choose the FH6 GameDB used by this save", Filter = "FH6 GameDB|*.slt;*.sqlite;*.db|All files|*.*" };
+        if (dialog.ShowDialog() == true) await LoadCatalogAsync(dialog.FileName);
+    }
+    async void CatalogAuto_Click(object sender, RoutedEventArgs e)
+    {
+        if (_busy || !TryApplyCarFields()) return;
+        await RunAsync(() => {
+            if (File.Exists(CatalogSourceSetting)) File.Delete(CatalogSourceSetting);
+            _catalogPreference = ""; ReloadCatalog();
+        }, "Finding installed FH6 GameDB…");
+    }
     static string StockSourceSetting => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ForzaModTool", "garage-stock-thumbnail-source.json");
     CarThumbnailLibrary? FindStockThumbnails(string? manual = null, bool resetAuto = false) {
         string? preferred=manual;
@@ -233,10 +282,11 @@ public partial class GarageViewerView : UserControl
     {
         var models = _catalog?.Cars.ToDictionary(c => c.Id);
         _rows = _session?.Entries().Select(c => models != null && models.TryGetValue(c.CarId, out var model)
-            ? new GarageRow(c, model.DisplayName + (model.IsInitialDrive ? " [Initial Drive variant]" : ""), model.RemovalLocked) { Manufacturer = model.Manufacturer, MediaName=model.MediaName } : new GarageRow(c, $"Unknown car ({c.CarId}) — not in built-in catalog", false)).ToArray() ?? Array.Empty<GarageRow>();
+            ? new GarageRow(c, model.DisplayName + (model.IsInitialDrive ? " [Initial Drive variant]" : ""), model.RemovalLocked) { Manufacturer = model.Manufacturer, MediaName=model.MediaName } : new GarageRow(c, $"Unknown car ({c.CarId}) — not in loaded car list", false)).ToArray() ?? Array.Empty<GarageRow>();
         LoadedPath.Text = _session == null ? "Open or drop a C_ProfileData save here. The original file is never overwritten."
             : _session.SourcePath + (_session.HasChanges ? " • unexported edits" : " • private working copy") + (_session.CanEdit ? "" : "\n" + _session.EditRestriction);
-        CatalogLabel.Text = _catalog == null ? "No car catalog loaded." : $"{_catalog.Label} • {_catalog.Cars.Count(c => c.CanAddToGarage && !c.IsTraffic):N0} regular / {_catalog.Cars.Count(c => c.CanAddToGarage && c.IsTraffic):N0} traffic choices";
+        CatalogLabel.Text = _catalog == null ? "No car catalog loaded." : $"{_catalogMessage} • {_catalog.Label} • {_catalog.Cars.Count(c => c.CanAddToGarage && !c.IsTraffic):N0} regular / {_catalog.Cars.Count(c => c.CanAddToGarage && c.IsTraffic):N0} traffic choices";
+        CatalogLabel.ToolTip = _catalog?.SourcePath;
         MissingCarsOnlyBox.IsEnabled = _session != null;
         ThumbnailCacheLabel.Text=_thumbnailMessage;
         StockThumbnailLabel.Text=_stockThumbnails==null?"Stock fallback not found • Auto-find or choose a folder":$"Stock fallback: {_stockThumbnails.Count:N0} models • cached images first";
@@ -303,7 +353,7 @@ public partial class GarageViewerView : UserControl
         foreach(var car in group.Items.Cast<GarageCarDefinition>()) CatalogList.SelectedItems.Add(car);
         UpdateButtons(); e.Handled=true;
     }
-    static bool Removable(GarageRow car) => !car.Entry.IsProtected && !car.ModelLocked && !car.Name.StartsWith("Unknown car (");
+    static bool Removable(GarageRow car) => !car.Entry.IsProtected && !car.ModelLocked;
     static IEnumerable<Expander> Expanders(DependencyObject parent) {
         for(int i=0;i<VisualTreeHelper.GetChildrenCount(parent);i++) {
             var child=VisualTreeHelper.GetChild(parent,i);
@@ -453,7 +503,6 @@ public partial class GarageViewerView : UserControl
         if (selected.Length == 0 || !confirm($"Remove {selected.Length} selected garage instance(s) and their purchased parts from this working copy?\n\nNo live save, livery file, or tune file will be deleted. Export to a new save to keep the result.")) return;
         var ids = selected.Select(c => c.Id).ToArray();
         var locked = _catalog?.Cars.Where(c => c.RemovalLocked).Select(c => c.Id).ToHashSet();
-        if (selected.Any(c => c.Name.StartsWith("Unknown car ("))) { StatusText.Text = "Unknown models cannot be safely removed because their removal restrictions are not in the built-in catalog."; return; }
         await RunAsync(() => _session.Remove(ids, locked), "Removing selected garage instances…", "Removed from working copy. Export edited save to keep these changes.");
     }
     async void Remove_Click(object sender, RoutedEventArgs e) => await RemoveSelectedAsync(text => MessageBox.Show(text, "Remove garage cars", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes);

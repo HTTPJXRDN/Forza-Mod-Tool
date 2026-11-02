@@ -109,6 +109,16 @@ public partial class MainWindow
     void SetDownloadLabel(string text)
     {
         var link = (Hyperlink)MainTabs.Template.FindName("UpdateDownloadLink", MainTabs);
+        link.Foreground = text == "Restart to install update"
+            ? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x58, 0xFF, 0x75))
+            : (System.Windows.Media.Brush)FindResource("Pink");
         link.Inlines.Clear(); link.Inlines.Add(new Run(text));
+    }
+
+    void ShowUpdateChangesOnRestart(object? sender, EventArgs e)
+    {
+        ContentRendered -= ShowUpdateChangesOnRestart;
+        if (UpdateReleaseNotes.WasUpdated(Environment.GetCommandLineArgs().Skip(1).ToArray(), out var previous))
+            new UpdateCompleteWindow(this, previous!).ShowDialog();
     }
 }
