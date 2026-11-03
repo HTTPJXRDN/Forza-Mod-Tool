@@ -7,6 +7,8 @@ Switch to a different car, wait for the game to save, then close it. Back up you
 3. Check the options you want, edit their values, then APPLY changes. Engine and motor buttons apply their own changes.
 4. Export SLT / Export DB saves the result. Apply alone does not save a file.
 
+Race/Drift Apply also repairs missing physics from the same car’s stock suspension or matching reference, keeping existing upgrade IDs. If no usable source exists, the log identifies the car and part.
+
 Fitment
 - Select Stock or the right Widebody tab before editing.
 - Reset fitment restores factory sizes, values and upgrade options from matching embedded stock, keeping native part IDs. Rims affect the whole car; widths, profiles and track widths affect the selected body. Without a stock baseline it restores loaded values.

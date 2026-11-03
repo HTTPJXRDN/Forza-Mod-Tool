@@ -156,6 +156,68 @@ public partial class CarEditorView
         return clone;
     }
 
+    Dictionary<string, object> RecoverSuspensionPhysics(long carId, int level, Dictionary<string, object> upgrade, string column, bool rear)
+    {
+        long part = Convert.ToInt64(upgrade["Id"]);
+        long missing = upgrade[column] == DBNull.Value ? 0 : Convert.ToInt64(upgrade[column]);
+        string media = Convert.ToString(Scalar("SELECT MediaName FROM Data_Car WHERE Id=?", carId)) ?? "Unknown car";
+        string context = $"{media} (car {carId}), suspension {part}, {(rear ? "rear" : "front")} physics {missing}";
+        if (level is not (3 or 5) || Convert.ToInt64(upgrade["Ordinal"]) != carId || Convert.ToInt64(upgrade["IsStock"]) != 0)
+            throw new InvalidOperationException(context + ": the upgrade cannot be repaired safely; no changes were kept.");
+
+        Dictionary<string, object> source = null;
+        bool exactUpgrade = false;
+        if (_stockReferenceAttached)
+        {
+            // Restore authored upgrade physics only when the exact part and
+            // axle reference agree with this database's matching clean build.
+            source = Query($@"SELECT p.* FROM stockref.List_UpgradeSpringDamper u
+                             JOIN stockref.List_SpringDamperPhysics p ON p.SpringDamperPhysicsID=u.""{column}""
+                             WHERE u.Id=? AND u.Ordinal=? AND u.Level=? AND u.IsStock=0 AND u.""{column}""=?",
+                part, carId, level, missing).SingleOrDefault();
+            exactUpgrade = source != null;
+        }
+        foreach (string database in _stockReferenceAttached ? new[] { "main", "stockref" } : new[] { "main" })
+        {
+            if (source != null) break;
+            var stock = Query($"SELECT * FROM {database}.List_UpgradeSpringDamper WHERE Ordinal=? AND IsStock=1", carId);
+            if (stock.Count != 1) continue;
+            source = Query($"SELECT * FROM {database}.List_SpringDamperPhysics WHERE SpringDamperPhysicsID=?", stock[0][column]).SingleOrDefault();
+        }
+        if (source == null)
+            throw new InvalidOperationException(context + ": no usable same-car stock/reference physics were found; no changes were kept.");
+        if (!_schema["List_SpringDamperPhysics"].SetEquals(source.Keys))
+            throw new InvalidOperationException(context + ": the reference physics schema differs; no changes were kept.");
+
+        long Uses(long id) => ScalarL(@"SELECT (SELECT COUNT(*) FROM List_UpgradeSpringDamper WHERE FrontSpringDamperPhysicsID=?)
+                                           + (SELECT COUNT(*) FROM List_UpgradeSpringDamper WHERE RearSpringDamperPhysicsID=?)", id, id) ?? 0;
+        long start = checked(carId * 1000 + (rear ? 100 : 0)), end = checked(start + 100);
+        long restored = missing >= start && missing < end && Uses(missing) == 1 ? missing : -1;
+        if (restored < 0)
+        {
+            for (long candidate = start + level; candidate < end; candidate++)
+                if ((ScalarL("SELECT COUNT(*) FROM List_SpringDamperPhysics WHERE SpringDamperPhysicsID=?", candidate) ?? 0) == 0 && Uses(candidate) == 0)
+                { restored = candidate; break; }
+            if (restored < 0) throw new UpgradeIdExhaustedException(context + ": no unused car-owned physics ID remains");
+        }
+        var copy = new Dictionary<string, object>(source)
+        {
+            ["SpringDamperPhysicsID"] = restored, ["Ordinal"] = carId
+        };
+        if (!exactUpgrade)
+        {
+            if (!IsFh2) copy["SuspensionPhysicsTypeID"] = level == 3 ? (rear ? 126L : 125L) : (rear ? 702L : 701L);
+            copy["UseBlowOffDamper"] = 0L;
+            InitializeSuspensionTuning(carId, level, rear, copy);
+        }
+        InsertClonedRow("List_SpringDamperPhysics", copy);
+        if (restored != missing && Exec($"UPDATE List_UpgradeSpringDamper SET \"{column}\"=? WHERE Id=? AND Ordinal=? AND IsStock=0", restored, part, carId) != 1)
+            throw new InvalidOperationException(context + ": the upgrade link could not be repaired; no changes were kept.");
+        upgrade[column] = restored;
+        Log($"rebuilt missing {(level == 3 ? "Race" : "Drift")} {(rear ? "rear" : "front")} physics for {media} (car {carId}, upgrade {part})", "ok");
+        return copy;
+    }
+
     int RepairSuspensionTuning(long carId, int level)
     {
         int repaired = 0;
@@ -163,7 +225,7 @@ public partial class CarEditorView
         foreach (var axle in new[] { (Column: "FrontSpringDamperPhysicsID", Rear: false), (Column: "RearSpringDamperPhysicsID", Rear: true) })
         {
             var physics = Query("SELECT * FROM List_SpringDamperPhysics WHERE SpringDamperPhysicsID=?", upgrade[axle.Column]).SingleOrDefault()
-                ?? throw new InvalidOperationException("A suspension upgrade references missing physics; no changes were kept.");
+                ?? RecoverSuspensionPhysics(carId, level, upgrade, axle.Column, axle.Rear);
             if (IsFh2 ? !Fh2SuspensionNeedsRepair(physics) : !SuspensionNeedsTuningRepair(physics)) continue;
             var changes = IsFh2 ? Fh2SuspensionChanges(physics, Fh2SuspensionTuning(carId, level, axle.Rear), false)
                 : SuspensionTuningChanges(physics, NativeSuspensionTuning(carId, level, axle.Rear), initialize: false);

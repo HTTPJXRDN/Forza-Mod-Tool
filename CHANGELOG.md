@@ -1,3 +1,9 @@
+# Forza Mod Tool v1.3.0.4
+
+- Race and Drift Apply now rebuild missing suspension physics from the same car’s stock suspension or matching stock reference. Existing upgrade IDs are kept.
+- Fixed all-car batches failing on upgrades with missing physics rows.
+- Missing-source errors identify the car, upgrade and axle; failed batches keep their rollback protection.
+
 # Forza Mod Tool v1.3.0.3
 
 - Added the latest FH6 stock database and nine new cars for Car Editor comparison, restore and update merges.

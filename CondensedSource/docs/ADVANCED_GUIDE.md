@@ -6,7 +6,7 @@
 
 Forza Mod Tool supports GameDB editing and merging for FH2, FH5, FH6 and Forza Motorsport (FM8). Profile Editor and Garage Viewer support FH6 and FH2/Azimuth saves. Save Swap is FH6-only, and FH5 profile saves are decrypt-only in Crypto.
 
-Download and extract `FH6LocalModTool_v1.3.0.3.zip` from the release assets. See [what changed since 1.2.6.3](../CHANGELOG.md).
+Download and extract the app ZIP from the release assets. See [what changed since 1.2.6.3](../CHANGELOG.md).
 
 ## Table of contents
 
@@ -138,7 +138,7 @@ FH5 editing and exported size labels were confirmed in-game. See [four-game supp
 
 ## Start here: a beginner's guide
 
-Download and extract `FH6LocalModTool_v1.3.0.3.zip` from the release assets, then run **FH6ModStudio.exe**. Keep the included DLLs, animation helpers, the `licenses` folder beside the executable. If building from source, run the resulting `FH6ModStudio.exe` instead.
+Download and extract the app ZIP from the release assets, then run **FH6ModStudio.exe**. Keep the included DLLs, animation helpers, the `licenses` folder beside the executable. If building from source, run the resulting `FH6ModStudio.exe` instead.
 
 The tool has seven tabs:
 
