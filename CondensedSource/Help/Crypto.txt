@@ -19,6 +19,7 @@ File types
 Merging
 - Put the receiving DB on top and the donor below, then Merge. Review conflicts before saving.
 - For Merge updated DB, put the NEW clean DB on top and OLD modded DB below. Choose the old version's clean DB if asked.
+- Merge updated DB carries over the FH6 water/methanol add-on. If the mod and update added the same ID, the new game row wins.
 - Both DBs must be from the same game.
 - After Merge updated DB, update any stringtables and zipmanifest.xml overrides in MediaPC using the new game files. Also update MediaPC\cars\AnimResourceConfig.txt if you have an override. Keep your custom entries. The DB merge does not update these files.
 

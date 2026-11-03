@@ -12,14 +12,13 @@ using FH6CarEditor;
 
 namespace FH6LocalCryptoTool.GarageViewer;
 
-public sealed class GarageRow(GarageEntry entry, string name, bool modelLocked) : INotifyPropertyChanged
+public sealed class GarageRow(GarageEntry entry, string name) : INotifyPropertyChanged
 {
     // Stable reference identity is essential for WPF selection dictionaries:
     // asynchronous thumbnail changes must not change a row's equality/hash.
     public GarageEntry Entry { get; } = entry;
     public string Name { get; } = name;
     public string MediaName { get; init; } = "";
-    public bool ModelLocked { get; } = modelLocked;
     public BitmapSource? Thumbnail { get; private set; }
     public string ThumbnailStatus { get; private set; } = "Not cached";
     internal bool ThumbnailRequested;
@@ -32,7 +31,7 @@ public sealed class GarageRow(GarageEntry entry, string name, bool modelLocked) 
     public long Id => Entry.Id;
     public long CarId => Entry.CarId;
     public string PI => (Entry.PerformanceIndex is > 0 and <= 2 ? Entry.PerformanceIndex * 1000 : Entry.PerformanceIndex).ToString("0", CultureInfo.InvariantCulture);
-    public string Status => Entry.IsProtected ? Entry.Protection : ModelLocked ? "Removal locked" : Entry.Favorite ? "Favorite" : "";
+    public string Status => Entry.IsProtected ? Entry.Protection : Entry.Favorite ? "Favorite" : "";
 }
 
 public partial class GarageViewerView : UserControl
@@ -282,7 +281,7 @@ public partial class GarageViewerView : UserControl
     {
         var models = _catalog?.Cars.ToDictionary(c => c.Id);
         _rows = _session?.Entries().Select(c => models != null && models.TryGetValue(c.CarId, out var model)
-            ? new GarageRow(c, model.DisplayName + (model.IsInitialDrive ? " [Initial Drive variant]" : ""), model.RemovalLocked) { Manufacturer = model.Manufacturer, MediaName=model.MediaName } : new GarageRow(c, $"Unknown car ({c.CarId}) — not in loaded car list", false)).ToArray() ?? Array.Empty<GarageRow>();
+            ? new GarageRow(c, model.DisplayName + (model.IsInitialDrive ? " [Initial Drive variant]" : "")) { Manufacturer = model.Manufacturer, MediaName=model.MediaName } : new GarageRow(c, $"Unknown car ({c.CarId}) — not in loaded car list")).ToArray() ?? Array.Empty<GarageRow>();
         LoadedPath.Text = _session == null ? "Open or drop a C_ProfileData save here. The original file is never overwritten."
             : _session.SourcePath + (_session.HasChanges ? " • unexported edits" : " • private working copy") + (_session.CanEdit ? "" : "\n" + _session.EditRestriction);
         CatalogLabel.Text = _catalog == null ? "No car catalog loaded." : $"{_catalogMessage} • {_catalog.Label} • {_catalog.Cars.Count(c => c.CanAddToGarage && !c.IsTraffic):N0} regular / {_catalog.Cars.Count(c => c.CanAddToGarage && c.IsTraffic):N0} traffic choices";
@@ -343,7 +342,7 @@ public partial class GarageViewerView : UserControl
     void SelectGarageManufacturer_Click(object sender, RoutedEventArgs e) {
         if(_busy || sender is not Button { DataContext: CollectionViewGroup group } || !TryApplyCarFields()) return;
         _restoringSelection=true;
-        try {GarageGrid.SelectedItems.Clear();foreach(var car in group.Items.Cast<GarageRow>().Where(Removable)) GarageGrid.SelectedItems.Add(car);}
+        try {GarageGrid.SelectedItems.Clear();foreach(var car in group.Items.Cast<GarageRow>()) GarageGrid.SelectedItems.Add(car);}
         finally {_restoringSelection=false;}
         UpdateButtons(); e.Handled=true;
     }
@@ -353,7 +352,6 @@ public partial class GarageViewerView : UserControl
         foreach(var car in group.Items.Cast<GarageCarDefinition>()) CatalogList.SelectedItems.Add(car);
         UpdateButtons(); e.Handled=true;
     }
-    static bool Removable(GarageRow car) => !car.Entry.IsProtected && !car.ModelLocked;
     static IEnumerable<Expander> Expanders(DependencyObject parent) {
         for(int i=0;i<VisualTreeHelper.GetChildrenCount(parent);i++) {
             var child=VisualTreeHelper.GetChild(parent,i);
@@ -397,12 +395,20 @@ public partial class GarageViewerView : UserControl
         }
         UpdateButtons();
     }
+    GarageRow[] CarsToRemove(GarageRow[] selected) =>
+        _session != null && selected.Length == _rows.Length
+            ? selected.Where(c => c.Id != _session.CurrentGarageId).ToArray()
+            : selected;
+
     void UpdateButtons()
     {
         bool editable = !_busy && _session?.CanEdit == true;
         var selected = GarageGrid.SelectedItems.Cast<GarageRow>().ToArray();
-        RemoveButton.IsEnabled = editable && selected.Length != 0 && selected.All(Removable);
-        RemoveButton.Content = selected.Length > 0 ? $"Remove selected ({selected.Length})…" : "Remove selected…";
+        var removal = CarsToRemove(selected);
+        bool removesCurrent = _session != null && removal.Any(c => c.Id == _session.CurrentGarageId);
+        RemoveButton.IsEnabled = editable && removal.Length > 0 && (!removesCurrent || _session!.CanChangeCurrentCar);
+        RemoveButton.ToolTip = removal.Length < selected.Length ? "Selecting the whole garage keeps the current car." : null;
+        RemoveButton.Content = removal.Length > 0 ? $"Remove selected ({removal.Length})…" : "Remove selected…";
         DuplicateButton.IsEnabled = editable && selected.Length == 1;
         CurrentButton.IsEnabled = editable && _session?.CanChangeCurrentCar == true && selected.Length == 1 && selected[0].Id != _session.CurrentGarageId;
         int additions=CatalogList.SelectedItems.Count;
@@ -499,11 +505,30 @@ public partial class GarageViewerView : UserControl
     async Task RemoveSelectedAsync(Func<string, bool> confirm)
     {
         if (_busy || _session == null || !TryApplyCarFields()) return;
-        var selected = GarageGrid.SelectedItems.Cast<GarageRow>().ToArray();
-        if (selected.Length == 0 || !confirm($"Remove {selected.Length} selected garage instance(s) and their purchased parts from this working copy?\n\nNo live save, livery file, or tune file will be deleted. Export to a new save to keep the result.")) return;
-        var ids = selected.Select(c => c.Id).ToArray();
-        var locked = _catalog?.Cars.Where(c => c.RemovalLocked).Select(c => c.Id).ToHashSet();
-        await RunAsync(() => _session.Remove(ids, locked), "Removing selected garage instances…", "Removed from working copy. Export edited save to keep these changes.");
+        var selection = GarageGrid.SelectedItems.Cast<GarageRow>().ToArray();
+        var selected = CarsToRemove(selection);
+        if (selected.Length == 0) return;
+        var ids = selected.Select(c => c.Id).ToHashSet();
+        GarageRow? replacement = null;
+        if (ids.Contains(_session.CurrentGarageId))
+        {
+            var retained = _rows.Where(c => !ids.Contains(c.Id) && c.Id is > 0 and <= int.MaxValue).ToArray();
+            var usable = _catalog?.Cars.Where(c => !c.IsTraffic && !c.IsInitialDrive).Select(c => c.Id).ToHashSet();
+            replacement = retained.FirstOrDefault(c => usable?.Contains(c.CarId) == true);
+            if (replacement == null)
+            {
+                StatusText.Text = "Set a retained car as current, or add a stock car before removing the current car.";
+                return;
+            }
+        }
+        string message = $"Remove {selected.Length} selected garage car(s) and their purchased parts from this working copy?";
+        if (selected.Length < selection.Length) message += "\n\nYour current car will stay in the garage.";
+        if (replacement != null) message += $"\n\nNew current car: {replacement.Name} (garage ID {replacement.Id}).";
+        if (ids.Any(_session.IsPendingCar)) message += "\n\nThe pending-car reference will point to the retained current car.";
+        if (selected.Any(c => _session.HasBarnFindVin(c.Entry.Guid)))
+            message += "\n\nMatching barn-find VINs will be cleared. Discovery and restoration progress will be kept.";
+        if (!confirm(message + "\n\nExport a new save to keep these changes.")) return;
+        await RunAsync(() => _session.Remove(ids, replacement?.Id), "Removing selected garage cars…", "Removed from working copy. Export edited save to keep these changes.");
     }
     async void Remove_Click(object sender, RoutedEventArgs e) => await RemoveSelectedAsync(text => MessageBox.Show(text, "Remove garage cars", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes);
     async void Duplicate_Click(object sender, RoutedEventArgs e)

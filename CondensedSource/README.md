@@ -1,4 +1,4 @@
-# Forza Mod Tool — 1.3.0.4
+# Forza Mod Tool — 1.3.0.5
 
 Edit supported files from **FH2, FH5, FH6 and Forza Motorsport (FM8)**. Profile Editor and Garage Viewer support FH6 and FH2/Azimuth saves. Save Swap is FH6-only; FH5 saves can be decrypted in Crypto.
 

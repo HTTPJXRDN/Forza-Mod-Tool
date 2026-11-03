@@ -21,8 +21,8 @@ public sealed class GarageProfileSession : IDisposable
     readonly ProfileContainer _profile;
     ProfileContainer _progress;
     readonly bool _encrypted;
-    readonly HashSet<long> _protected = new();
     readonly HashSet<long> _pending = new();
+    long? _pendingReplacementId;
     readonly HashSet<string> _barnVins = new(StringComparer.OrdinalIgnoreCase);
     readonly HashSet<string> _garageColumns;
     readonly HashSet<string> _tables;
@@ -43,7 +43,15 @@ public sealed class GarageProfileSession : IDisposable
     public bool CanAddCars => AddRestriction.Length == 0;
     public bool CanEditCarDetails => CanEdit && _carDetailsLayout;
     public long CurrentGarageId { get; private set; }
-    public bool CanChangeCurrentCar => CanEdit && _profile.Properties?.Walk().Any(p => p.Path == "/Main/CareerCar" && p.Node.RawValue.Length == 4 && p.Node.TypeId is 3 or 7 or 17) == true;
+    public bool CanChangeCurrentCar => CanEdit && CanWriteCarReference("/Main/CareerCar");
+    internal bool IsPendingCar(long id) => _pendingReplacementId is long replacement ? replacement == id : _pending.Contains(id);
+
+    internal bool HasBarnFindVin(string vin) => _barnVins.Contains(vin) &&
+        Guid.TryParse(vin, out Guid parsed) && parsed != Guid.Empty;
+
+    bool CanWriteCarReference(string path) =>
+        _profile.Properties?.Walk().Where(p => p.Path == path).Select(p => p.Node).ToArray()
+            is [{ RawValue.Length: 4, TypeId: 3 or 7 or 17, IsEditable: true }];
     public long Count => L(Scalar("SELECT COUNT(*) FROM Career_Garage"));
 
     GarageProfileSession(string source)
@@ -85,15 +93,15 @@ public sealed class GarageProfileSession : IDisposable
             if (current == null || !long.TryParse(current.DisplayValue(), NumberStyles.Integer, CultureInfo.InvariantCulture, out long id))
                 _currentCarRestriction = "The current-car reference could not be verified; editing existing cars is disabled.";
             else {
-                _originalCurrentId = CurrentGarageId = id; _protected.Add(id);
+                _originalCurrentId = CurrentGarageId = id;
                 if (L(Scalar("SELECT COUNT(*) FROM Career_Garage WHERE Id=$p0", id)) != 1)
                     _currentCarRestriction = "The current-car reference does not identify a garage record; editing existing cars is disabled.";
             }
             foreach (var p in properties?.Walk().Where(p => p.Path == "/Main/CareerCarNext") ?? Enumerable.Empty<(string Path, PropertyTree.PropertyNode Node)>())
-                if (long.TryParse(p.Node.DisplayValue(), out long pending) && pending > 0) { _pending.Add(pending); _protected.Add(pending); }
+                if (long.TryParse(p.Node.DisplayValue(), out long pending) && pending > 0) _pending.Add(pending);
             // Ignore non-allocatable current/pending sentinels, but reserve every
             // valid pending ID so a new car cannot take over that reference.
-            _nextId = Math.Max(L(Scalar("SELECT COALESCE(MAX(Id),0) FROM Career_Garage")), _protected.Where(id => id > 0 && id <= int.MaxValue).DefaultIfEmpty().Max());
+            _nextId = Math.Max(L(Scalar("SELECT COALESCE(MAX(Id),0) FROM Career_Garage")), _pending.Append(CurrentGarageId).Where(id => id > 0 && id <= int.MaxValue).DefaultIfEmpty().Max());
             if (_tables.Contains("Career_PurchasedParts")) _nextId = Math.Max(_nextId, L(Scalar("SELECT COALESCE(MAX(GarageId),0) FROM Career_PurchasedParts")));
             _nextId = _nextId >= int.MaxValue ? (long)int.MaxValue + 1 : _nextId + 1;
             _originalNextId = _nextId;
@@ -114,8 +122,10 @@ public sealed class GarageProfileSession : IDisposable
     }
     void Exec(string sql, params object[] values) { using var c=Command(sql,values); c.ExecuteNonQuery(); }
     string Protection(Dictionary<string, object> row) {
-        if (_protected.Contains(L(row["Id"]))) return L(row["Id"]) == CurrentGarageId ? "Current car" : "Pending car reference";
-        if (_barnVins.Contains(Convert.ToString(row["Guid"])!))
+        long id = L(row["Id"]);
+        if (id == CurrentGarageId) return "Current car";
+        if (IsPendingCar(id)) return "Pending car reference";
+        if (HasBarnFindVin(Convert.ToString(row["Guid"])!))
             return "Barn-find VIN reference";
         return "";
     }
@@ -171,7 +181,6 @@ public sealed class GarageProfileSession : IDisposable
         if (garageId <= 0 || garageId > int.MaxValue) throw new InvalidDataException("Garage ID does not fit the current-car reference.");
         if (garageId == CurrentGarageId) return;
         CurrentGarageId = garageId;
-        _protected.Clear(); _protected.UnionWith(_pending); _protected.Add(garageId);
         HasChanges = true;
     }
     void CheckEditable() { if (!CanEdit) throw new InvalidOperationException(EditRestriction); }
@@ -184,22 +193,39 @@ public sealed class GarageProfileSession : IDisposable
     Dictionary<string, object> Row(long id) => Read("SELECT * FROM Career_Garage WHERE Id=$p0",id).SingleOrDefault()
         ?? throw new InvalidOperationException("That garage entry no longer exists; refresh the list.");
     public int PurchasedPartCount(long garageId) => _tables.Contains("Career_PurchasedParts") ? checked((int)L(Scalar("SELECT COUNT(*) FROM Career_PurchasedParts WHERE GarageId=$p0",garageId))) : 0;
-    public void Remove(IReadOnlyCollection<long> ids, IReadOnlySet<long>? lockedModels = null) {
-        CheckEditable(); var selected=ids.Distinct().Select(Row).ToArray();
-        if(selected.Length==0) throw new InvalidOperationException("Select a garage entry first.");
-        if(selected.Length>=Count) throw new InvalidOperationException("Keep at least one car in the garage.");
-        foreach(var row in selected) {
-            string reason=Protection(row);
-            if(reason.Length!=0)throw new InvalidOperationException($"Garage entry {L(row["Id"])} is protected ({reason}). Select a different car in-game before removing it.");
-            if(lockedModels?.Contains(L(row["CarId"]))==true)throw new InvalidOperationException("The GameDB marks this model as non-removable.");
+    public void Remove(IReadOnlyCollection<long> ids, long? replacementGarageId = null) {
+        CheckEditable();
+        var selectedIds = ids.ToHashSet();
+        if (selectedIds.Count == 0) throw new InvalidOperationException("Select a garage entry first.");
+        if (selectedIds.Count >= Count) throw new InvalidOperationException("Keep at least one car in the garage.");
+        var selected = selectedIds.Select(Row).ToArray();
+        long nextCurrent = CurrentGarageId;
+        if (selectedIds.Contains(CurrentGarageId))
+        {
+            if (!CanChangeCurrentCar || replacementGarageId is not (> 0 and <= int.MaxValue) ||
+                selectedIds.Contains(replacementGarageId.Value))
+                throw new InvalidOperationException("Choose a retained car as the current car before removing this selection.");
+            _ = Row(replacementGarageId.Value);
+            nextCurrent = replacementGarageId.Value;
         }
+        bool replacePending = selectedIds.Any(IsPendingCar);
+        if (replacePending && (!CanWriteCarReference("/Main/CareerCarNext") || nextCurrent <= 0 || nextCurrent > int.MaxValue))
+            throw new InvalidOperationException("The pending-car reference cannot be reassigned in this save.");
+
         Atomic(()=>{
             foreach(var row in selected){
                 Exec("DELETE FROM Career_PurchasedParts WHERE GarageId=$p0",row["Id"]);
                 using var c=Command("DELETE FROM Career_Garage WHERE Id=$p0 AND Guid=$p1",row["Id"],row["Guid"]);
                 if(c.ExecuteNonQuery()!=1)throw new InvalidOperationException("Garage identity changed; no entries removed.");
+                string vin = Convert.ToString(row["Guid"])!;
+                if (HasBarnFindVin(vin))
+                    Exec("UPDATE BarnFinds SET VIN=$p0 WHERE VIN=$p1 COLLATE NOCASE " +
+                         "AND NOT EXISTS (SELECT 1 FROM Career_Garage WHERE Guid=$p1 COLLATE NOCASE)",
+                         Guid.Empty.ToString(), vin);
             }
         });
+        CurrentGarageId = nextCurrent;
+        if (replacePending) _pendingReplacementId = nextCurrent;
     }
     static readonly string[] History = { "PartsValue","DistanceDriven","TimeDriven","TotalWinnings","TotalRepairs","NumVictories","NumPodiums","NumRaces","NumTimesSold","TimeDrivenInRoadTrips","CurOwnerNumRaces","CurOwnerWinnings","NumSkillPointsEarned","HighestSkillScore","SharedID","IsFavorite","HasCurrentOwnerViewedCar" };
     long Insert(Dictionary<string,object> row) {
@@ -280,25 +306,30 @@ public sealed class GarageProfileSession : IDisposable
             byte[] expectedProgress=_progress.Serialize();
             var expected=ProfileContainer.Parse(expectedProgress);
             var exported=ProfileContainer.Parse(expectedProgress);exported.Database=File.ReadAllBytes(snapshot);
-            if(CurrentGarageId != _originalCurrentId) {
-                var current=exported.Properties?.Walk().Single(p=>p.Path=="/Main/CareerCar").Node;
-                if(current==null || !current.TrySetFromText(CurrentGarageId.ToString(CultureInfo.InvariantCulture)))
-                    throw new InvalidDataException("The current-car reference could not be serialized; no save exported.");
+            var references = new Dictionary<string, long>();
+            if (CurrentGarageId != _originalCurrentId) references.Add("/Main/CareerCar", CurrentGarageId);
+            if (_pendingReplacementId is long pending)
+                references.Add("/Main/CareerCarNext", pending);
+            foreach (var (path, id) in references)
+            {
+                var node = exported.Properties?.Walk().Single(p => p.Path == path).Node;
+                if (node == null || !node.TrySetFromText(id.ToString(CultureInfo.InvariantCulture)))
+                    throw new InvalidDataException($"The {path} reference could not be serialized; no save exported.");
             }
             byte[] stream=exported.Serialize();byte[] bytes=_encrypted?ProfileData.Encrypt(stream,_original):stream;
             byte[] check=_encrypted?ProfileData.Decrypt(bytes):bytes;
             if(!stream.AsSpan().SequenceEqual(check))throw new InvalidDataException("Exported save failed payload round-trip verification.");
             var packed=ProfileContainer.Parse(check);
-            // Restore only the explicitly changed current-car leaf on a verification
-            // copy. Exact equality then proves every other account/progress byte
-            // matches the separately validated Journal plan, not arbitrary edits.
-            if(CurrentGarageId != _originalCurrentId) {
-                var current=packed.Properties?.Walk().Single(p=>p.Path=="/Main/CareerCar").Node;
-                if(current==null || current.DisplayValue()!=CurrentGarageId.ToString(CultureInfo.InvariantCulture) ||
-                    !current.TrySetFromText(_originalCurrentId.ToString(CultureInfo.InvariantCulture)))
-                    throw new InvalidDataException("Exported current-car reference failed verification.");
-                packed = ProfileContainer.Parse(packed.Serialize());
+            // Restore the edited references on the verification copy before comparing progress.
+            foreach (var (path, id) in references)
+            {
+                var node = packed.Properties?.Walk().Single(p => p.Path == path).Node;
+                var original = expected.Properties?.Walk().Single(p => p.Path == path).Node;
+                if (node == null || original == null || node.DisplayValue() != id.ToString(CultureInfo.InvariantCulture) ||
+                    !node.TrySetFromText(original.DisplayValue()))
+                    throw new InvalidDataException($"Exported {path} reference failed verification.");
             }
+            if (references.Count > 0) packed = ProfileContainer.Parse(packed.Serialize());
             for(int i=0;i<3;i++)if(!packed.Sections[i].Payload.AsSpan().SequenceEqual(expected.Sections[i].Payload))throw new InvalidDataException("An unexpected account/progress change occurred; export rejected.");
             using (var file=new FileStream(candidate,FileMode.CreateNew,FileAccess.Write)) { file.Write(bytes);file.Flush(true); }
             File.Move(candidate,destination,false);HasChanges=false;
@@ -312,7 +343,7 @@ public sealed class GarageProfileSession : IDisposable
             original.BackupDatabase(_db);
             CurrentGarageId=_originalCurrentId;
             _nextId=_originalNextId;
-            _protected.Clear();_protected.UnionWith(_pending);_protected.Add(CurrentGarageId);
+            _pendingReplacementId = null;
             _progress=_profile;JournalSyncSummary="";
             HasChanges=false;
         } finally { Cleanup(snapshot); }

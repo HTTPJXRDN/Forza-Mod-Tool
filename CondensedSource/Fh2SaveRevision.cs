@@ -404,12 +404,15 @@ public sealed partial class Fh2SaveRevision : IDisposable
         foreach (string field in new[] { "DistanceDriven", "TimeDriven", "TotalWinnings", "TotalRepairs", "NumVictories", "NumPodiums", "NumRaces", "NumTimesSold", "TimeDrivenInRoadTrips", "CurOwnerNumRaces", "CurOwnerWinnings", "NumSkillPointsEarned", "SharedID" }) row[field] = 0L;
         Atomic(() => { added = Insert(row); Execute("INSERT INTO Career_PurchasedParts SELECT $p0,PartEnum,PartId,ManufacturerId,PricePaid FROM Career_PurchasedParts WHERE GarageId=$p1", added, id); }); return added;
     }
-    public void Remove(IReadOnlyCollection<long> ids, IReadOnlySet<long> lockedModels)
+    public void Remove(IReadOnlyCollection<long> ids)
     {
         var selected = ids.Distinct().ToArray();
         if (selected.Length == 0 || selected.Length >= GarageCount) throw new InvalidOperationException("Select cars and keep at least one garage car.");
         foreach (long id in selected)
-            if (_protected.Contains(id) || lockedModels.Contains(Convert.ToInt64(Car(id)["CarId"]))) throw new InvalidOperationException("Current, pending, barn-find and non-removable cars are protected.");
+        {
+            _ = Car(id);
+            if (_protected.Contains(id)) throw new InvalidOperationException("Current, pending and barn-find cars are protected in FH2.");
+        }
         Atomic(() => { foreach (long id in selected) { Execute("DELETE FROM Career_PurchasedParts WHERE GarageId=$p0", id); Execute("DELETE FROM Career_Garage WHERE Id=$p0", id); } });
     }
     public void UpdateDetails(long id, string owner, long distance, double speed)

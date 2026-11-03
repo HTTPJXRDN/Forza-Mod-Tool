@@ -1,3 +1,11 @@
+# Forza Mod Tool v1.3.0.5
+
+- Fixed FH6 update merges for the water/methanol add-on. The merge carries over its upgrades, preset values and garage column.
+- Update merges keep the new game's row when a mod independently added the same ID. The preview lists conflicts.
+- Garage Viewer removes any FH6 model, including current, pending and barn-find cars. Keep at least one car.
+- Removed the model lock in the FH2 Garage Viewer. Current, pending and barn-find save references still protect individual cars.
+- Ctrl+A followed by Remove keeps the current car in FH6 and all protected cars in FH2.
+
 # Forza Mod Tool v1.3.0.4
 
 - Race and Drift Apply now rebuild missing suspension physics from the same car’s stock suspension or matching stock reference. Existing upgrade IDs are kept.

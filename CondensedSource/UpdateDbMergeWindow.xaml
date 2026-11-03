@@ -32,7 +32,7 @@
                 <TextBlock x:Name="SummaryText" Foreground="{StaticResource Pink}" FontWeight="SemiBold" Margin="0,12,0,0"/>
                 <TextBlock Text="The result starts from the clean updated DB. Your old modded DB is compared with its version-matched clean baseline. Only your additions, edited fields and deliberate deletions are applied. New update content and the new VersionInfo are kept."
                            TextWrapping="Wrap" Margin="0,9,0,0"/>
-                <TextBlock Text="Important: your edits win when both you and the update changed the same field. Deliberately deleted old keys are removed even if the update changed them. Review and test the output before installing it; a matching version stamp does not prove an external baseline is unmodified."
+                <TextBlock Text="For existing keys, your edited fields and deletions win. If the mod and update both added the same key, the update's row wins. Review the merge notes and test the output. Always use an unmodified baseline."
                            Foreground="{StaticResource Pink}" TextWrapping="Wrap" Margin="0,8,0,0"/>
             </StackPanel>
             <TextBox Grid.Row="2" x:Name="DetailsText" Margin="16,0,16,0" Padding="10" IsReadOnly="True"

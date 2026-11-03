@@ -10,7 +10,7 @@ Garage Viewer supports FH6 C_ProfileData and FH2/Azimuth revision saves. Back up
 4. Edit Original Owner, Distance driven or Top speed, then click **Apply car fields**. In a batch, check only the fields to replace. An empty checked owner field clears that label.
 5. Click **Export save**. With FH6 closed, install an encrypted copy as C_ProfileData.
 
-Original Owner is a label, not account identity. Distance and speed use raw DB units. Current/pending cars, barn finds and other protected models cannot be removed.
+Original Owner is a label, not account identity. Distance and speed use raw DB units. Any model can be removed in FH6. Keep at least one car. If you remove the current car, the confirmation names its replacement.
 
 Adding or duplicating supported non-DLC cars also completes their matching Car Collection Journal entries. DLC cars can still be added; their Journal entries are excluded from this sync. Removing a car does not undo Journal completion. No DLC license or reward claim is granted.
 
@@ -24,7 +24,7 @@ Use Auto-find or Stock thumbnails folder to choose stock previews. Drag the divi
 
 ## FH2 / Azimuth
 
-Click **FH2 save…** and choose a revision or the revisions folder. Add, duplicate or remove supported stock cars, or edit their owner/history fields. Batch Original Owner is supported; distance and top speed are single-car edits. FH2 uses its own stock catalog and native previews.
+Click **FH2 save…** and choose a revision or the revisions folder. Add stock cars, or duplicate, remove and edit owned cars. Current, pending and barn-find cars stay protected. Batch Original Owner is supported; distance and top speed are single-car edits. FH2 uses its own stock catalog and native previews.
 
 **Export save** writes a complete revision. Close FH2 and Azimuth, then back up the whole User save folder. Copy the same exported commit and entire data folder into **both numbered folders inside revisions**, keeping their existing names. Replacing only one can stop the edited save loading.
 

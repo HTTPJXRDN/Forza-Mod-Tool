@@ -5,11 +5,17 @@ using Microsoft.Data.Sqlite;
 namespace FH6LocalCryptoTool;
 
 internal sealed record DeltaTable(string Name, string[] Columns, string[] Keys, bool New,
-    int Added, int Changed, int Deleted);
+    int Added, int Changed, int Deleted, bool AddWaterMethanol, bool BaselineHasWaterMethanol);
 
 /// <summary>Three-way merge: old clean -> old modded changes applied to the clean update.</summary>
 internal static class GameDbDelta
 {
+    internal const string WaterMethanol = "WaterMethanolInjection";
+    internal const string WaterMethanolParts = "List_UpgradeEngineWaterMethanolInjection";
+    internal static bool IsWaterMethanolTable(string table) =>
+        table.Equals("NewProfile_Career_Garage", StringComparison.OrdinalIgnoreCase) ||
+        table.Equals("UpgradePresetPackages", StringComparison.OrdinalIgnoreCase);
+
     private static string Q(string name) => "\"" + name.Replace("\"", "\"\"") + "\"";
     internal static SqliteConnection Open(string updated, string modded, string baseline)
     {
@@ -40,18 +46,50 @@ internal static class GameDbDelta
         {
             if (table.Equals("VersionInfo", StringComparison.OrdinalIgnoreCase)) continue;
             bool addedTable = !oldTables.Contains(table, StringComparer.OrdinalIgnoreCase);
+            bool updatedTable = newTables.Contains(table, StringComparer.OrdinalIgnoreCase);
             var donor = Info(db, "ov", table); var updated = Info(db, "main", table);
             var old = Info(db, "old", table);
-            if ((!addedTable && !Compatible(old, donor)) ||
-                (newTables.Contains(table, StringComparer.OrdinalIgnoreCase) && !Compatible(updated, donor)))
-            { warnings.Add($"{table}: column sets or primary keys differ; review schema changes before merging."); continue; }
+            bool addWaterMethanol = false, baselineHasWaterMethanol = true;
+            if ((!addedTable && !Compatible(old, donor)) || (updatedTable && !Compatible(updated, donor)))
+            {
+                // This add-on extends two keyed stock tables without changing their other columns.
+                // Treat the old stock value as the add-on's zero ("no upgrade") default.
+                var withoutAddon = (donor.Columns.Where(c => !c.Equals(WaterMethanol, StringComparison.OrdinalIgnoreCase)).ToArray(),
+                    donor.Keys);
+                if (addedTable || !updatedTable || !IsWaterMethanolTable(table) || donor.Keys.Length == 0 ||
+                    !donorTables.Contains(WaterMethanolParts, StringComparer.OrdinalIgnoreCase) ||
+                    !HasWaterMethanolColumn(db, "ov", table) ||
+                    !(Compatible(old, withoutAddon) || Compatible(old, donor) && HasWaterMethanolColumn(db, "old", table)) ||
+                    !(Compatible(updated, withoutAddon) || Compatible(updated, donor) && HasWaterMethanolColumn(db, "main", table)))
+                {
+                    warnings.Add($"{table}: column sets or primary keys differ; review schema changes before merging.");
+                    continue;
+                }
+                baselineHasWaterMethanol = Compatible(old, donor);
+                addWaterMethanol = Compatible(updated, withoutAddon);
+                if (addWaterMethanol)
+                    notes?.Add($"{table}: carry over the {WaterMethanol} column with its stock default of 0.");
+            }
             int added, changed = 0, deleted = 0;
             if (addedTable) added = Count(db, $"SELECT COUNT(*) FROM ov.{Q(table)}");
             else if (donor.Keys.Length > 0)
             {
                 string match = Match(donor.Keys, "b", "d");
-                string different = Different(donor.Columns.Except(donor.Keys, StringComparer.OrdinalIgnoreCase), "b", "d");
-                added = Count(db, $"SELECT COUNT(*) FROM ov.{Q(table)} d WHERE NOT EXISTS (SELECT 1 FROM old.{Q(table)} b WHERE {match})");
+                var fields = donor.Columns.Except(donor.Keys, StringComparer.OrdinalIgnoreCase);
+                string different = Different(fields, "b", "d", baselineHasWaterMethanol);
+                string newKey = $"NOT EXISTS (SELECT 1 FROM old.{Q(table)} b WHERE {match})";
+                added = Count(db, $"SELECT COUNT(*) FROM ov.{Q(table)} d WHERE {newKey}");
+                if (updatedTable && added > 0)
+                {
+                    string sameKey = Match(donor.Keys, "m", "d");
+                    string additions = $"FROM ov.{Q(table)} d WHERE {newKey}";
+                    string updatedRow = $"FROM main.{Q(table)} m WHERE {sameKey}";
+                    added -= Count(db, $"SELECT COUNT(*) {additions} AND EXISTS (SELECT 1 {updatedRow})");
+                    string conflict = Different(fields, "m", "d", !addWaterMethanol);
+                    int conflicts = Count(db, $"SELECT COUNT(*) {additions} AND EXISTS (SELECT 1 {updatedRow} AND ({conflict}))");
+                    if (conflicts > 0)
+                        notes?.Add($"{table}: kept the updated game's values for {conflicts:n0} new key(s) also used by the mod.");
+                }
                 changed = Count(db, $"SELECT COUNT(*) FROM ov.{Q(table)} d JOIN old.{Q(table)} b ON {match} WHERE {different}");
                 deleted = Count(db, $"SELECT COUNT(*) FROM old.{Q(table)} b WHERE NOT EXISTS (SELECT 1 FROM ov.{Q(table)} d WHERE {match})");
             }
@@ -76,13 +114,25 @@ internal static class GameDbDelta
                         "; cannot carry these edits over without recreating a removed game table. Review this table before merging.");
                 continue;
             }
-            result.Add(new(table, donor.Columns, donor.Keys, addedTable, added, changed, deleted));
+            result.Add(new(table, donor.Columns, donor.Keys, addedTable, added, changed, deleted, addWaterMethanol, baselineHasWaterMethanol));
         }
         return result;
     }
     private static bool Compatible((string[] Columns, string[] Keys) a, (string[] Columns, string[] Keys) b) =>
         a.Columns.ToHashSet(StringComparer.OrdinalIgnoreCase).SetEquals(b.Columns) &&
         a.Keys.SequenceEqual(b.Keys, StringComparer.OrdinalIgnoreCase);
+    private static bool HasWaterMethanolColumn(SqliteConnection db, string schema, string table)
+    {
+        using var cmd = db.CreateCommand();
+        cmd.CommandText = $"SELECT COUNT(*) FROM pragma_table_info($table, $schema) WHERE " +
+            "name = $column COLLATE NOCASE AND upper(trim(type)) IN ('INT', 'INTEGER') " +
+            "AND [notnull] = 0 AND dflt_value = '0' AND pk = 0";
+        cmd.Parameters.AddWithValue("$table", table);
+        cmd.Parameters.AddWithValue("$schema", schema);
+        cmd.Parameters.AddWithValue("$column", WaterMethanol);
+        return Convert.ToInt32(cmd.ExecuteScalar()) == 1;
+    }
+
     private static bool SameDefinitions(SqliteConnection db, string table)
     {
         List<string> Definitions(string schema)
@@ -99,12 +149,19 @@ internal static class GameDbDelta
     }
     private static string Match(IEnumerable<string> keys, string a, string b) =>
         string.Join(" AND ", keys.Select(k => $"{a}.{Q(k)} IS {b}.{Q(k)}"));
-    private static string Different(IEnumerable<string> cols, string a, string b) =>
-        string.Join(" OR ", cols.Select(k => $"{a}.{Q(k)} IS NOT {b}.{Q(k)}").DefaultIfEmpty("0"));
+    private static string CompareValue(string column, string alias, bool hasWaterMethanol) =>
+        !hasWaterMethanol && column.Equals(WaterMethanol, StringComparison.OrdinalIgnoreCase) ? "0" : $"{alias}.{Q(column)}";
+
+    private static string Different(IEnumerable<string> cols, string a, string b, bool firstHasWaterMethanol) =>
+        string.Join(" OR ", cols.Select(k => $"{CompareValue(k, a, firstHasWaterMethanol)} IS NOT {b}.{Q(k)}").DefaultIfEmpty("0"));
 
     internal static void Apply(SqliteConnection db, IReadOnlyList<DeltaTable> tables, Action<string>? log)
     {
         using var tx = db.BeginTransaction();
+        foreach (var table in tables.Where(t => t.AddWaterMethanol))
+            Exec(db, $"ALTER TABLE main.{Q(table.Name)} ADD COLUMN {Q(WaterMethanol)} INT DEFAULT 0 " +
+                $"REFERENCES {Q(WaterMethanolParts)}(Id)", tx);
+
         foreach (var t in tables.Where(t => t.Added + t.Changed + t.Deleted > 0 || t.New))
         {
             string target = $"main.{Q(t.Name)}", donor = $"ov.{Q(t.Name)}", old = $"old.{Q(t.Name)}";
@@ -134,20 +191,20 @@ internal static class GameDbDelta
                 {
                     Exec(db, $"DELETE FROM {target} AS m WHERE EXISTS (SELECT 1 FROM {old} b WHERE {keyMb} AND NOT EXISTS (SELECT 1 FROM {donor} d WHERE {keyBd}))", tx);
                     // Only user-edited columns win. Official edits to untouched columns survive.
-                    string changed = Different(nonkeys, "b", "d");
+                    string changed = Different(nonkeys, "b", "d", t.BaselineHasWaterMethanol);
                     if (t.Changed > 0 && nonkeys.Length > 0)
                     {
-                        string set = string.Join(",", nonkeys.Select(c => $"{Q(c)}=(SELECT CASE WHEN b.{Q(c)} IS NOT d.{Q(c)} THEN d.{Q(c)} ELSE m.{Q(c)} END FROM {donor} d JOIN {old} b ON {keyBd} WHERE {keyMd})"));
+                        string set = string.Join(",", nonkeys.Select(c => $"{Q(c)}=(SELECT CASE WHEN {CompareValue(c, "b", t.BaselineHasWaterMethanol)} IS NOT d.{Q(c)} THEN d.{Q(c)} ELSE m.{Q(c)} END FROM {donor} d JOIN {old} b ON {keyBd} WHERE {keyMd})"));
                         Exec(db, $"UPDATE {target} AS m SET {set} WHERE EXISTS (SELECT 1 FROM {donor} d JOIN {old} b ON {keyBd} WHERE {keyMd} AND ({changed}))", tx);
                         // Preserve a user-edited row even if the official update removed that key.
                         Exec(db, $"INSERT INTO {target} ({cols}) SELECT {string.Join(",", t.Columns.Select(c => "d." + Q(c)))} FROM {donor} d JOIN {old} b ON {keyBd} WHERE ({changed}) AND NOT EXISTS (SELECT 1 FROM {target} m WHERE {keyMd})", tx);
                     }
                 }
-                // User-added keys may also exist in the update: donor wins that deliberate conflict.
-                string conflict = nonkeys.Length == 0 ? "DO NOTHING" : "DO UPDATE SET " + string.Join(",", nonkeys.Select(c => $"{Q(c)}=excluded.{Q(c)}"));
+                // A key absent from the baseline has no common row to compare against.
+                // Keep the official new row if the mod independently used the same key.
                 Exec(db, $"INSERT INTO {target} ({cols}) SELECT {string.Join(",", t.Columns.Select(c => "d." + Q(c)))} FROM {donor} d WHERE " +
                     (t.New ? "true" : $"NOT EXISTS (SELECT 1 FROM {old} b WHERE {keyBd})") +
-                    $" ON CONFLICT({string.Join(",", t.Keys.Select(Q))}) {conflict}", tx);
+                    $" ON CONFLICT({string.Join(",", t.Keys.Select(Q))}) DO NOTHING", tx);
             }
             else
             {

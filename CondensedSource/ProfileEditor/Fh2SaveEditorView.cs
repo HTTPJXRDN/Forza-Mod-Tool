@@ -358,14 +358,8 @@ public sealed partial class Fh2SaveEditorView : UserControl, IDisposable
         BuildFh2ThumbnailControls(bottom);
         var actions = new WrapPanel(); bottom.Children.Add(actions);
         Add(actions, "Duplicate selected", async () => { if (_cars.SelectedItems.Count == 1 && _cars.SelectedItem is CarRow row) await GarageEditAsync(() => _session!.Duplicate(row.Id)); });
-        Add(actions, "Remove selected…", async () =>
-        {
-            var selected = _cars.SelectedItems.Cast<CarRow>().ToArray(); if (selected.Length == 0) return;
-            if (MessageBox.Show($"Remove {selected.Length} garage car(s) and their purchased parts from the working copy?", "FH2 garage", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
-            var known = _catalog!.Cars.Select(c => c.Id).ToHashSet();
-            var locked = _catalog.Cars.Where(c => c.RemovalLocked).Select(c => c.Id).Concat(_session!.Cars().Where(c => !known.Contains(c.CarId)).Select(c => c.CarId)).ToHashSet();
-            await GarageEditAsync(() => _session.Remove(selected.Select(c => c.Id).ToArray(), locked));
-        });
+        Add(actions, "Remove selected…", async () => await RemoveSelectedAsync(message =>
+            MessageBox.Show(message, "FH2 garage", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes));
         var ownerDetails = new WrapPanel(); bottom.Children.Add(ownerDetails);
         ownerDetails.Children.Add(Text("Original Owner")); _owner = Input(); _owner.MinWidth = 180; _owner.ToolTip = "Display label only, not account identity. An empty value clears the label on the selected cars."; ownerDetails.Children.Add(_owner);
         _applyOwner = Button("Apply Original Owner"); ownerDetails.Children.Add(_applyOwner);
@@ -426,6 +420,23 @@ public sealed partial class Fh2SaveEditorView : UserControl, IDisposable
         var row = selected[0];
         var d = _session!.Details(row.Id); _owner.Text = Convert.ToString(d["OriginalOwner"]) ?? ""; _distance.Text = Convert.ToString(d["DistanceDriven"], CultureInfo.InvariantCulture) ?? "0"; _speed.Text = Convert.ToString(d["TopSpeed"], CultureInfo.InvariantCulture) ?? "0";
     }
+    async Task RemoveSelectedAsync(Func<string, bool> confirm)
+    {
+        if (_busy || _cars == null || _session?.CanEditGarage != true) return;
+        var selection = _cars.SelectedItems.Cast<CarRow>().Select(c => c.Id).ToArray();
+        bool wholeGarage = selection.Length == _session.GarageCount;
+        if (wholeGarage)
+            selection = _session.Cars().Where(c => !c.IsProtected).Select(c => c.Id).ToArray();
+        if (selection.Length == 0)
+        {
+            _status.Text = "Select a car that can be removed.";
+            return;
+        }
+        string message = $"Remove {selection.Length} garage car(s) and their purchased parts from the working copy?";
+        if (wholeGarage) message += "\n\nYour current car and any other protected cars will stay in the garage.";
+        if (confirm(message)) await GarageEditAsync(() => _session.Remove(selection));
+    }
+
     async Task GarageEditAsync(Action edit)
     {
         if (_busy || _session == null) return; _busy = true; UpdateEnabled();

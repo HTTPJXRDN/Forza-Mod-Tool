@@ -162,9 +162,22 @@ public static class UpdateDbMerge
                 var key = new ForeignKeyIdentity(table.ToUpperInvariant(), definition.Parent.ToUpperInvariant(),
                     JsonSerializer.Serialize(definition.Columns.OrderBy(p => p[0], StringComparer.Ordinal)
                         .ThenBy(p => p[1], StringComparer.Ordinal)));
-                result[key] = result.GetValueOrDefault(key) + warning.Value;
+                int count = warning.Value;
+                if (GameDbDelta.IsWaterMethanolTable(table) && definition.Columns.Count == 1 &&
+                    key.ParentTable == GameDbDelta.WaterMethanolParts.ToUpperInvariant() &&
+                    definition.Columns[0][0] == GameDbDelta.WaterMethanol.ToUpperInvariant() &&
+                    definition.Columns[0][1] == "ID")
+                {
+                    // The add-on uses zero to mean "no upgrade", even though it declares a foreign key.
+                    using var cmd = db.CreateCommand();
+                    cmd.CommandText = $"SELECT COUNT(*) FROM main.[{table}] WHERE {GameDbDelta.WaterMethanol}=0 " +
+                        $"AND NOT EXISTS (SELECT 1 FROM main.{GameDbDelta.WaterMethanolParts} WHERE Id=0)";
+                    count -= Convert.ToInt32(cmd.ExecuteScalar());
+                }
+                result[key] = result.GetValueOrDefault(key) + count;
             }
         }
         return result;
     }
 }
+
