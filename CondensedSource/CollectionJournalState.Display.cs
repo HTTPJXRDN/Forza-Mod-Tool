@@ -12,7 +12,7 @@ public static partial class CollectionJournalState
         .Where(c => !present.Contains(c.Id) && !CollectionJournalCarPolicy.Excluded(c)).Select(c =>
     {
         var category = ActiveCategories[c.Category];
-        return new Row(c.Id, category.Festival ? "Horizon Festival" : "Discover Japan", FriendlyCategory(category), c.Name,
+        return new Row(c.Id, category.Festival ? "Horizon Festival" : "Discover Japan", category.Name, c.Name,
             c.Description, c.Subtitle, c.Points, false, Automatic(c), StateKnown: false, Supported: false, Compatibility: status);
     });
 

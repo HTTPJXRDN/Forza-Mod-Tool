@@ -1,4 +1,4 @@
-# Forza Mod Tool — 1.3.0.5
+# Forza Mod Tool — 1.3.0.6
 
 Edit supported files from **FH2, FH5, FH6 and Forza Motorsport (FM8)**. Profile Editor and Garage Viewer support FH6 and FH2/Azimuth saves. Save Swap is FH6-only; FH5 saves can be decrypted in Crypto.
 
@@ -93,7 +93,7 @@ Use the active file named exactly **C_ProfileData**, not `C_ProfileData_SCopy`, 
 
 Click **FH2 save…** in Profile Editor or Garage Viewer. Choose a revision, its `data` folder, or the `revisions` folder to load the latest revision. Back up the entire `User_<account>` folder first. This supports Azimuth revision saves, not Xbox 360/STFS containers.
 
-Keep the existing numbered folders inside `revisions`; their numbers change as the game saves. Install the same exported save contents in both folders, as described under [FH2 save editing](#fh2-save-editing).
+Keep the existing numbered folders inside `revisions`; their numbers change as the game saves. Install the same exported save contents in both folders. See [FH2 save editing in the advanced guide](docs/ADVANCED_GUIDE.md#profile-and-garage).
 
 ## Choose a tab
 
@@ -149,7 +149,7 @@ Driver XP retention was tested after earning XP and restarting. Online XP editin
 
 If Playlist completion is unavailable, click **Choose game data…** beside it and select `<FH6>\media\ObjectModelGame.zip`. The tool remembers this location.
 
-Journal completion also updates supported race, PR stunt, job and world progress. Better personal bests are kept. Linked horns and phrases complete their required Journal progress. To discover regions, complete all ten region rows together. The advanced guide covers result values and limits.
+Journal completion also updates supported race, PR stunt, job and world progress. Better personal bests are kept. Linked horns and phrases complete their required Journal progress. To discover regions, complete all ten region rows together. The [Collection Journal guide](docs/ADVANCED_GUIDE.md#collection-journal) covers result values and limits.
 
 Badge earned dates use **UTC**. Preserve real dates, follow the displayed playlist window, and check the actual availability before entering a date for an unverified series.
 
@@ -232,7 +232,7 @@ For FH5/FH6/FM8, an exported `.sqlite` must be re-encrypted before installation.
 
 ## Install an edited save
 
-For FH2/Azimuth, back up first, then install the same exported `commit` and whole `data` folder in **both revision folders**, keeping their existing names. See [FH2 save editing](#fh2-save-editing). The following instructions are for FH6.
+For FH2/Azimuth, back up first, then install the same exported `commit` and whole `data` folder in **both revision folders**, keeping their existing names. See [FH2 save editing in the advanced guide](docs/ADVANCED_GUIDE.md#profile-and-garage). The following instructions are for FH6.
 
 With the game closed, back up the whole active save folder. Copy your **encrypted** exported/swapped profile into that folder and name the copy exactly **C_ProfileData**. Keep the backup untouched.
 

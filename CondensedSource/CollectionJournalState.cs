@@ -42,7 +42,7 @@ public static partial class CollectionJournalState
         {
             var category = ActiveCategories.GetValueOrDefault(e.Definition.Category);
             if (category is null) return new Row(e.Definition.Id, "Unknown", "Unmapped content", e.Definition.Name, e.Definition.Description, "", 0, Completed(state.Payload, e), false, Supported: false, Compatibility: "Read-only: no matching game definition");
-            return new Row(e.Definition.Id, category.Festival ? "Horizon Festival" : "Discover Japan", FriendlyCategory(category),
+            return new Row(e.Definition.Id, category.Festival ? "Horizon Festival" : "Discover Japan", category.Name,
                 e.Definition.Name, e.Definition.Description, e.Definition.Subtitle, e.Definition.Points, Completed(state.Payload, e), Automatic(e.Definition),
                 Supported: e.Supported, Compatibility: e.Supported ? "Supported" : "Read-only: definition or native progression mapping differs");
         }).Concat(MissingRows(state.Entries.Select(e => e.Definition.Id).ToHashSet(), "Not present in this save")).ToArray();
@@ -405,7 +405,6 @@ public static partial class CollectionJournalState
         .ToDictionary(g => g.Key, g => g.Sum(e => e.Definition.Points));
     static int Festival(Dictionary<ulong, int> points) => ActiveCategories.Values.Where(c => c.Festival).Sum(c => points.GetValueOrDefault(c.Id));
     static int Discovery(Dictionary<ulong, int> points) => ActiveCategories.Values.Where(c => !c.Festival).Sum(c => points.GetValueOrDefault(c.Id));
-    static string FriendlyCategory(CollectionJournalCatalog.Category c) => c.Name.StartsWith("CollectionCampaignCategory.", StringComparison.Ordinal) ? "Drift Attack" : c.Name;
     const string FestivalKey = "CurrencyBucket_FestivalCollectionCampaignProgress_cc_festival";
     const string DiscoveryKey = "CurrencyBucket_DiscoveryCollectionCampaignProgress_cc_discovery";
     static string CategoryKey(CollectionJournalCatalog.Category c) => "CurrencyBucket_CollectionCategoryProgress_" + c.Bucket;

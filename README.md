@@ -1,4 +1,4 @@
-# Forza Mod Tool — 1.3.0.5
+# Forza Mod Tool — 1.3.0.6
 
 Edit supported files from **FH2, FH5, FH6 and Forza Motorsport (FM8)**. Profile Editor and Garage Viewer support FH6 and FH2/Azimuth saves. Save Swap is FH6-only; FH5 saves can be decrypted in Crypto.
 
@@ -93,7 +93,7 @@ Use the active file named exactly **C_ProfileData**, not `C_ProfileData_SCopy`, 
 
 Click **FH2 save…** in Profile Editor or Garage Viewer. Choose a revision, its `data` folder, or the `revisions` folder to load the latest revision. Back up the entire `User_<account>` folder first. This supports Azimuth revision saves, not Xbox 360/STFS containers.
 
-Keep the existing numbered folders inside `revisions`; their numbers change as the game saves. Install the same exported save contents in both folders, as described under [FH2 save editing](#fh2-save-editing).
+Keep the existing numbered folders inside `revisions`; their numbers change as the game saves. Install the same exported save contents in both folders. See [FH2 save editing in the advanced guide](CondensedSource/docs/ADVANCED_GUIDE.md#profile-and-garage).
 
 ## Choose a tab
 
@@ -149,13 +149,13 @@ Driver XP retention was tested after earning XP and restarting. Online XP editin
 
 If Playlist completion is unavailable, click **Choose game data…** beside it and select `<FH6>\media\ObjectModelGame.zip`. The tool remembers this location.
 
-Journal completion also updates supported race, PR stunt, job and world progress. Better personal bests are kept. Linked horns and phrases complete their required Journal progress. To discover regions, complete all ten region rows together. The advanced guide covers result values and limits.
+Journal completion also updates supported race, PR stunt, job and world progress. Better personal bests are kept. Linked horns and phrases complete their required Journal progress. To discover regions, complete all ten region rows together. The [Collection Journal guide](CondensedSource/docs/ADVANCED_GUIDE.md#collection-journal) covers result values and limits.
 
 Badge earned dates use **UTC**. Preserve real dates, follow the displayed playlist window, and check the actual availability before entering a date for an unverified series.
 
 Missing or changed definitions stay read-only. Unlocks do not grant DLC licenses; Journal entries do not add actual cars, photos or online results.
 
-See the [Profile Editor screenshots and detailed help](docs/ADVANCED_GUIDE.md#section-5-profile-editor) in the advanced guide.
+See the [Profile Editor screenshots and detailed help](CondensedSource/docs/ADVANCED_GUIDE.md#section-5-profile-editor) in the advanced guide.
 
 ### Garage Viewer: manage owned cars
 
@@ -175,7 +175,7 @@ Load an Azimuth revision using **FH2 save…** in Profile Editor or Garage Viewe
 - **Garage Viewer:** add, duplicate or remove supported cars and edit owner/distance/top speed. Original Owner supports batches; distance and top speed are single-car edits.
 - **Export save:** writes a complete revision. Close FH2 and Azimuth and back up the entire `User_<account>` save folder. Copy the same exported `commit` and entire `data` folder into **both folders inside `revisions`**, replacing their contents. Keep both existing folder names. Replacing only one can stop the edited save loading.
 
-See the [FH2 save guide](docs/FH2-SAVES.md) for installation and supported fields. FH2/FH5 save swapping is unavailable.
+See the [FH2 save guide](CondensedSource/docs/FH2-SAVES.md) for installation and supported fields. FH2/FH5 save swapping is unavailable.
 
 ### Animation Swap: change animations
 
@@ -183,7 +183,7 @@ See the [FH2 save guide](docs/FH2-SAVES.md) for installation and supported field
 2. Choose the donor and front/rear door channels, then apply the swap. Other channels and endpoint adjustments are advanced options.
 3. Use **Save As** to write a new file. Keep the input untouched.
 
-For FH6 car-ZIP overrides, use `<FH6>\MediaPC\Cars\` with the original car ZIP's filename; keep the original under `media\Cars` untouched. A raw CLIPD is not a complete installable car ZIP. See the [detailed guide](docs/ADVANCED_GUIDE.md#section-3-animation-swap) for raw-file and stance workflows.
+For FH6 car-ZIP overrides, use `<FH6>\MediaPC\Cars\` with the original car ZIP's filename; keep the original under `media\Cars` untouched. A raw CLIPD is not a complete installable car ZIP. See the [detailed guide](CondensedSource/docs/ADVANCED_GUIDE.md#section-3-animation-swap) for raw-file and stance workflows.
 
 ### Save Swap: use another save's progress
 
@@ -204,7 +204,7 @@ Do not reverse donor and target. Save Swap does not grant DLC ownership or guara
 - **Profile saves:** Decrypt writes the complete `.decrypted` profile, without extracting a SQLite file. FH6 can re-encrypt it with its original profile template. FH5 is decrypt-only; viewing, editing and Save Swap are disabled.
 - **After a game update:** use **Merge updated DB** to keep your mods with the new game content. Follow the steps below.
 
-Leave **Drop & rebuild** off unless you intend to replace the donor cars' existing mods. General table/row merging is advanced; follow the [detailed merge guide](docs/ADVANCED_GUIDE.md#merge-another-database).
+Leave **Drop & rebuild** off unless you intend to replace the donor cars' existing mods. General table/row merging is advanced; follow the [detailed merge guide](CondensedSource/docs/ADVANCED_GUIDE.md#merge-another-database).
 
 ### Merge updated DB: keep your mods after a game update
 
@@ -218,7 +218,7 @@ Close the game and back up your modded GameDB first.
 
 The same merge actions support FH2, FH5, FH6 and FM8 DBs; use two DBs from the same game. Unchanged old tables absent from an update are skipped and reported; edited missing tables or incompatible layouts still stop the update merge.
 
-The result saves beside the top input unless you choose an **Output folder**. Do not replace the clean original in `media\stripped`. See the [three-step guide with photos](docs/ADVANCED_GUIDE.md#merge-after-a-game-update) for examples.
+The result saves beside the top input unless you choose an **Output folder**. Do not replace the clean original in `media\stripped`. See the [three-step guide with photos](CondensedSource/docs/ADVANCED_GUIDE.md#merge-after-a-game-update) for examples.
 
 ### DB Browser: manual database editing
 
@@ -232,7 +232,7 @@ For FH5/FH6/FM8, an exported `.sqlite` must be re-encrypted before installation.
 
 ## Install an edited save
 
-For FH2/Azimuth, back up first, then install the same exported `commit` and whole `data` folder in **both revision folders**, keeping their existing names. See [FH2 save editing](#fh2-save-editing). The following instructions are for FH6.
+For FH2/Azimuth, back up first, then install the same exported `commit` and whole `data` folder in **both revision folders**, keeping their existing names. See [FH2 save editing in the advanced guide](CondensedSource/docs/ADVANCED_GUIDE.md#profile-and-garage). The following instructions are for FH6.
 
 With the game closed, back up the whole active save folder. Copy your **encrypted** exported/swapped profile into that folder and name the copy exactly **C_ProfileData**. Keep the backup untouched.
 
@@ -244,7 +244,7 @@ Decrypt the supported `gamedb.slt` in **Crypto**, edit the SQLite in **Car Edito
 
 FM has **no MediaPC override folder**. Back up `media\base\gamedb.slt` before replacing it with the re-encrypted DB. Put other finished encrypted files/rebuilt ZIPs at their original paths under `<FM>\Content\media\`, with its original filename and subfolder. Do not install decrypted SQLite.
 
-FH2 save editing/export and supported FM8 LZX camera/car ZIP operations need **[x64 xcompress64.dll](https://github.com/D3FEKT/ForzaTechStudio/blob/Main/ForzaTechStudio/Native/xcompress64.dll)** beside the app EXE. Click **Download raw file** on GitHub, put it beside `FH6ModStudio.exe`, then restart the tool. It is not included in the release. See [setup instructions](NATIVE_RUNTIME.md). Track archives are extract-only. Profile/garage/save swapping are not supported for FM.
+FH2 save editing/export and supported FM8 LZX camera/car ZIP operations need **[x64 xcompress64.dll](https://github.com/D3FEKT/ForzaTechStudio/blob/Main/ForzaTechStudio/Native/xcompress64.dll)** beside the app EXE. Click **Download raw file** on GitHub, put it beside `FH6ModStudio.exe`, then restart the tool. It is not included in the release. See [setup instructions](CondensedSource/NATIVE_RUNTIME.md). Track archives are extract-only. Profile/garage/save swapping are not supported for FM.
 
 ## If something goes wrong
 
@@ -255,7 +255,7 @@ FH2 save editing/export and supported FM8 LZX camera/car ZIP operations need **[
 
 Known limits: Online XP persistence is unconfirmed. The reported Car Collection display of **4,500 / 4,480** is unresolved. Extreme power/handling edits can raise PI, including X999.
 
-More help: [detailed guide](docs/ADVANCED_GUIDE.md) · [changelog](CHANGELOG.md).
+More help: [detailed guide](CondensedSource/docs/ADVANCED_GUIDE.md) · [changelog](CHANGELOG.md).
 
 ## Disclaimer
 

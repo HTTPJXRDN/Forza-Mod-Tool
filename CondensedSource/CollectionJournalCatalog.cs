@@ -1,4 +1,5 @@
 #if PROFILE_UNLOCK_TESTING
+using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Text.Json;
@@ -21,6 +22,11 @@ internal static class CollectionJournalCatalog
     internal sealed record Catalog(Category[] Categories, Challenge[] Challenges);
     internal static Catalog Data { get; } = Read();
 
+    internal static string CategoryName(string name, string bucket) =>
+        string.IsNullOrWhiteSpace(name) || name.StartsWith("CollectionCampaignCategory.IDS_", StringComparison.Ordinal)
+            ? CultureInfo.InvariantCulture.TextInfo.ToTitleCase(bucket[3..].Replace('_', ' '))
+            : name;
+
     static Catalog Read()
     {
         using var packed = new MemoryStream(Convert.FromBase64String(Encoded));
@@ -30,7 +36,11 @@ internal static class CollectionJournalCatalog
             catalog.Categories.Select(c => c.Id).Distinct().Count() != 38 ||
             catalog.Challenges.Select(c => c.Id).Distinct().Count() != 2855)
             throw new InvalidDataException("Journal catalog coverage changed.");
-        return catalog with { Challenges = catalog.Challenges.Select(PromoPhotoProgressState.Reference).Select(GarageCollectionJournalState.Reference).Select(GarageCollectionJournalState.FriendlyLabels).ToArray() };
+        return catalog with
+        {
+            Categories = catalog.Categories.Select(c => c with { Name = CategoryName(c.Name, c.Bucket) }).ToArray(),
+            Challenges = catalog.Challenges.Select(PromoPhotoProgressState.Reference).Select(GarageCollectionJournalState.Reference).Select(GarageCollectionJournalState.FriendlyLabels).ToArray()
+        };
     }
 
     const string Encoded = """

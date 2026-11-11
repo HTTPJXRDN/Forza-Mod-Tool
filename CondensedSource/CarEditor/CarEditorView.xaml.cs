@@ -3156,6 +3156,7 @@ public partial class CarEditorView : UserControl
         if (!_engines.Any(engine => engine.Id == eid))
         { Log("choose an engine from this game's engine list", "warn"); return; }
         bool wasEV = _electricSpecCars.Contains(carId);
+        bool repairCombustionDrivetrains = wasEV || _originalEvCars.Contains(carId) || _motorMedia.Contains(_car.Media);
         long hadMotor = ScalarL("SELECT COUNT(*) FROM List_UpgradeMotor WHERE Ordinal=?", carId) ?? 0;
         var donor = Query("SELECT Id,PowertrainID,NumGears,EngineConfigID,CylinderID,AspirationTypeId,Displacement FROM Data_Car WHERE MediaName=? AND EngineConfigID<>6", e.Media).FirstOrDefault()
             ?? Query(@"SELECT c.Id,c.PowertrainID,c.NumGears,c.EngineConfigID,c.CylinderID,c.AspirationTypeId,c.Displacement
@@ -3164,6 +3165,7 @@ public partial class CarEditorView : UserControl
         if (wasEV && donor == null)
         { Log("cannot convert EV to ICE: this engine has no combustion donor car for a complete Data_Car spec", "warn"); return; }
         long manufacturer = EngManuf(eid);
+        int gearedDrivetrains = 0;
         try
         {
             Exec("SAVEPOINT set_stock_engine");
@@ -3188,7 +3190,9 @@ public partial class CarEditorView : UserControl
             }
             // ICE and EV menus are mutually exclusive, including non-stock swap options.
             Exec("DELETE FROM List_UpgradeMotor WHERE Ordinal=?", carId);
-            if (donor != null && donor.ContainsKey("Id"))
+            if (repairCombustionDrivetrains)
+                gearedDrivetrains = FitCombustionDrivetrains(carId, donor == null ? 0 : Convert.ToInt64(donor["Id"]));
+            else if (donor != null && donor.ContainsKey("Id"))
             {
                 var ddt = Query("SELECT DrivetrainID,PowertrainId,ManufacturerId FROM List_UpgradeDrivetrain WHERE Ordinal=? AND IsStock=1", donor["Id"]).FirstOrDefault();
                 if (ddt != null && (ScalarL("SELECT COUNT(*) FROM List_UpgradeDrivetrain WHERE Ordinal=? AND IsStock=1", carId) ?? 0) > 0)
@@ -3205,6 +3209,11 @@ public partial class CarEditorView : UserControl
             RefreshCar(); RenderCars();
             Log((wasEV ? "⚡→⛽ EV converted to ICE. " : "★ stock engine set. ") + "Stock = " + EngName(eid), "ok");
             if (hadMotor > 0) Log($"   removed all {hadMotor} motor option(s); combustion spec and gearbox fitted", "info");
+            if (gearedDrivetrains > 0)
+            {
+                Log($"   fitted {gearedDrivetrains} geared drivetrain option(s), keeping each drive layout", "info");
+                Log("   for an owned car, refit its drivetrain and gearbox upgrades in game, then reset gearbox tuning", "warn");
+            }
             if (donor == null) Log("no donor car for this engine — copied basic config only", "warn");
         }
         catch (Exception ex)

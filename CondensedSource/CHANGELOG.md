@@ -1,3 +1,10 @@
+# Forza Mod Tool v1.3.0.6
+
+- Fixed FH6 Collection Journal entries all showing under Drift Attack.
+- The Profile Editor can read packed English string tables and use built-in labels when game strings are missing.
+- Rebuilding a string table from JSON preserves existing entries stored by hash.
+- Setting a combustion engine as stock on an EV fits geared transmissions and keeps the existing drive layouts.
+
 # Forza Mod Tool v1.3.0.5
 
 - Fixed FH6 update merges for the water/methanol add-on. The merge carries over its upgrades, preset values and garage column.

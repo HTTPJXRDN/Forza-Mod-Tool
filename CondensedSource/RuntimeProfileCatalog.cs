@@ -2,6 +2,7 @@
 using System.Buffers.Binary;
 using System.Globalization;
 using System.IO;
+using System.IO.Compression;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
@@ -14,7 +15,11 @@ internal static class RuntimeProfileCatalog
     internal static ProfileGameData.Snapshot Read(string path)
     {
         using var source = new ObjectModelSource(path);
-        var labels = new GameLabels(Path.Combine(Path.GetDirectoryName(path)!, "stripped", "StringTables", "EN"));
+        string media = Path.GetDirectoryName(path)!;
+        string[] labelRoots = Path.GetFileName(media).ToLowerInvariant() is "media" or "mediapc"
+            ? new[] { Path.Combine(Path.GetDirectoryName(media)!, "MediaPC"), Path.Combine(Path.GetDirectoryName(media)!, "media") }
+            : new[] { media };
+        var labels = new GameLabels(labelRoots.Select(root => Path.Combine(root, "stripped", "StringTables", "EN")).ToArray());
         var warnings = new List<string>();
         T Part<T>(string name, Func<T> read, T fallback)
         {
@@ -93,6 +98,8 @@ internal static class RuntimeProfileCatalog
         var items = Map(source, "CollectionItemChallengeDataSet", "Data");
         var challenges = Map(source, "ChallengeDataSet", "Data"); var stats = Map(source, "ChallengeStatsSet", "Stats");
         var threads = source.Data("ProgressionThreads"); var categories = source.Data("CollectionCampaignCategoryData");
+        var referenceCategories = CollectionJournalCatalog.Data.Categories.ToDictionary(c => c.Id);
+        var referenceChallenges = CollectionJournalCatalog.Data.Challenges.ToDictionary(c => c.Id);
         var promoCars = Prop(source.Single("CollectionCampaignPhotographyMapping"), "CarsToItems").Elements("map_element")
             .SelectMany(n => n.Element("value")!.Elements("element").Select(e => (Id: Hash((string)e.Attribute("value")!), Car: int.Parse((string)n.Element("key")!.Attribute("value")!, CultureInfo.InvariantCulture))))
             .ToDictionary(p => p.Id, p => p.Car);
@@ -103,7 +110,9 @@ internal static class RuntimeProfileCatalog
             var thread = threads[Hash(Value(Prop(Prop(category, "ProgressionThread"), "Id"), "Object"))];
             string bucket = Value(thread, "BucketID");
             if (Value(thread, "CurrencyType") != "CollectionCategoryProgress" || !Regex.IsMatch(bucket, "^cc_[a-z0-9_]{1,100}$")) throw new InvalidDataException("Unsupported Journal category currency.");
-            categoryRecords.Add(new(id, group.Key, labels.Resolve(Value(category, "DisplayName")), bucket, Value(category, "CampaignId") == "e366b86a-fbce-3a49-a0a8-2895039655db", group.Count(), group.Sum(p => int.Parse(Value(p.Value, "CampaignProgressReward"), CultureInfo.InvariantCulture))));
+            string? fallback = referenceCategories.TryGetValue(id, out var reference) && reference.Bucket == bucket ? reference.Name : null;
+            string name = CollectionJournalCatalog.CategoryName(labels.Resolve(Value(category, "DisplayName"), fallback), bucket);
+            categoryRecords.Add(new(id, group.Key, name, bucket, Value(category, "CampaignId") == "e366b86a-fbce-3a49-a0a8-2895039655db", group.Count(), group.Sum(p => int.Parse(Value(p.Value, "CampaignProgressReward"), CultureInfo.InvariantCulture))));
         }
         var result = new List<CollectionJournalCatalog.Challenge>();
         foreach (var item in items)
@@ -132,16 +141,33 @@ internal static class RuntimeProfileCatalog
                 objectives.Add(new(Hash(Value(objective, "Id")), target, kind, dependencies.ToArray(), global, paths.ToArray()));
             }
             if (objectives.Count is < 1 or > 4096 || objectives.Select(o => o.Id).Distinct().Count() != objectives.Count) throw new InvalidDataException("Invalid objective coverage.");
-            string name = labels.Resolve(Value(definition, "Name")), description = labels.Resolve(Value(definition, "Description"));
-            string? car = Prop(definition, "Objectives").Elements("element").Select(o => Value(o, "CarOrdinal")).FirstOrDefault(v => v.Length > 0);
-            if (car != null) { name += " [car " + car + "]"; description += " [car " + car + "]"; }
+            uint version = uint.Parse(Value(definition, "DataVersion"), CultureInfo.InvariantCulture);
             int points = int.Parse(Value(item.Value, "CampaignProgressReward"), CultureInfo.InvariantCulture);
             if (points is < 0 or > 1_000_000) throw new InvalidDataException("Invalid Journal points.");
             ulong categoryId = Hash(Value(item.Value, "ParentCategoryId"));
             int promoCar = categoryId == PromoPhotoProgressState.CategoryId ? PromoPhotoProgressState.ReadCar(definition) : 0;
-            result.Add(GarageCollectionJournalState.FriendlyLabels(new(item.Key, linked, uint.Parse(Value(definition, "DataVersion"), CultureInfo.InvariantCulture), categoryId, name, description, labels.Resolve(Value(item.Value, "Subtitle")), points, objectives.ToArray())
-                { PromoCarOrdinal = promoCar > 0 && promoCars.GetValueOrDefault(item.Key) == promoCar ? promoCar : 0,
-                  CollectionCarOrdinal = categoryId == GarageCollectionJournalState.CategoryId ? GarageCollectionJournalState.ReadCar(definition) : 0 }));
+            promoCar = promoCar > 0 && promoCars.GetValueOrDefault(item.Key) == promoCar ? promoCar : 0;
+            int collectionCar = categoryId == GarageCollectionJournalState.CategoryId ? GarageCollectionJournalState.ReadCar(definition) : 0;
+            if (!referenceChallenges.TryGetValue(item.Key, out var reference) ||
+                reference.LinkedId != linked || reference.Version != version || reference.Category != categoryId ||
+                reference.PromoCarOrdinal != promoCar || reference.CollectionCarOrdinal != collectionCar ||
+                !reference.Objectives.Select(o => (o.Id, o.Kind, o.Target)).SequenceEqual(objectives.Select(o => (o.Id, o.Kind, o.Target))))
+                reference = null;
+
+            string JournalText(string key, string? fallback) =>
+                labels.Resolve(key, key.Contains(".IDS_", StringComparison.Ordinal) && !string.IsNullOrEmpty(fallback) ? fallback : null);
+            string name = JournalText(Value(definition, "Name"), reference?.Name);
+            string description = JournalText(Value(definition, "Description"), reference?.Description);
+            string subtitle = JournalText(Value(item.Value, "Subtitle"), reference?.Subtitle);
+            string? car = Prop(definition, "Objectives").Elements("element").Select(o => Value(o, "CarOrdinal")).FirstOrDefault(v => v.Length > 0);
+            if (car != null)
+            {
+                string suffix = " [car " + car + "]";
+                if (!name.EndsWith(suffix, StringComparison.Ordinal)) name += suffix;
+                if (!description.EndsWith(suffix, StringComparison.Ordinal)) description += suffix;
+            }
+            result.Add(GarageCollectionJournalState.FriendlyLabels(new(item.Key, linked, version, categoryId, name, description, subtitle, points, objectives.ToArray())
+                { PromoCarOrdinal = promoCar, CollectionCarOrdinal = collectionCar }));
         }
         if (result.Count is < 1 or > 100_000 || categoryRecords.Count is < 1 or > 4096 || categoryRecords.Select(c => c.Bucket).Distinct().Count() != categoryRecords.Count) throw new InvalidDataException("Invalid Journal catalog coverage.");
         return new(categoryRecords.ToArray(), result.ToArray());
@@ -193,8 +219,9 @@ internal static class RuntimeProfileCatalog
     }
 }
 
-internal sealed class GameLabels(string root)
+internal sealed class GameLabels(params string[] englishFolders)
 {
+    const int MaxTableBytes = 64_000_000;
     readonly Dictionary<string, Dictionary<uint, string>> tables = new(StringComparer.Ordinal);
     internal string Resolve(string reference, string? fallback = null)
     {
@@ -202,18 +229,54 @@ internal sealed class GameLabels(string root)
         string table = reference[..dot];
         if (!Regex.IsMatch(table, "^[A-Za-z0-9_-]{1,100}$")) return fallback ?? reference;
         if (!tables.TryGetValue(table, out var values))
-        {
-            string path = Path.Combine(root, table + ".str");
-            try { values = File.Exists(path) ? Read(path) : new(); } catch (Exception e) when (e is IOException or InvalidDataException or ArgumentException or OverflowException) { values = new(); }
-            tables.Add(table, values);
-        }
-        uint hash = uint.MaxValue; foreach (char c in reference[(dot + 1)..]) { hash ^= c; hash = (hash << 7) | (hash >> 25); }
-        return values.GetValueOrDefault(hash) ?? fallback ?? reference;
+            tables.Add(table, values = LoadTable(table + ".str"));
+        return values.GetValueOrDefault(UpgradeStringTable.Hash(reference[(dot + 1)..])) ?? fallback ?? reference;
     }
-    static Dictionary<uint, string> Read(string path)
+
+    Dictionary<uint, string> LoadTable(string fileName)
     {
-        if (new FileInfo(path).Length > 64_000_000) throw new InvalidDataException(); byte[] bytes = File.ReadAllBytes(path);
-        if (bytes.Length < 136 || bytes[0] != 0 || bytes[1] != 8) throw new InvalidDataException();
+        var values = new Dictionary<uint, string>();
+        void Add(Func<Dictionary<uint, string>> read)
+        {
+            try
+            {
+                foreach (var entry in read())
+                    if (!string.IsNullOrEmpty(entry.Value)) values.TryAdd(entry.Key, entry.Value);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException or InvalidOperationException or NotSupportedException or ArgumentException or OverflowException)
+            {
+                // Labels are optional. Continue with the next source if a table cannot be read.
+            }
+        }
+        foreach (string folder in englishFolders)
+        {
+            string loose = Path.Combine(folder, fileName);
+            if (File.Exists(loose))
+                Add(() =>
+                {
+                    using var file = File.OpenRead(loose);
+                    return Read(file, file.Length);
+                });
+            string packed = folder + ".zip";
+            if (File.Exists(packed))
+                Add(() =>
+                {
+                    using var zip = ZipFile.OpenRead(packed);
+                    var entry = zip.Entries.SingleOrDefault(e => e.Name.Equals(fileName, StringComparison.OrdinalIgnoreCase));
+                    if (entry == null) return new();
+                    using var stream = entry.Open();
+                    return Read(stream, entry.Length);
+                });
+        }
+        return values;
+    }
+
+    static Dictionary<uint, string> Read(Stream stream, long length)
+    {
+        if (length is < 136 or > MaxTableBytes) throw new InvalidDataException();
+        byte[] bytes = new byte[(int)length];
+        stream.ReadExactly(bytes);
+        if (bytes[0] != 0 || bytes[1] != 8) throw new InvalidDataException();
         uint U32(int at) => BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(at));
         int tables = BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(130)), final = checked(132 + tables * 4); var values = new Dictionary<uint, string>();
         if (tables is < 1 or > 16 || final > bytes.Length) throw new InvalidDataException();

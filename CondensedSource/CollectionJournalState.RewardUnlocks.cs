@@ -76,7 +76,7 @@ public static partial class CollectionJournalState
         if (!ProfileContainer.Parse(bytes).Serialize().AsSpan().SequenceEqual(bytes)) return false;
         var result = journal?.Result ?? default;
         change = new(added, links.Length, result, added > 0 || result.Changed,
-            string.Join(", ", goals.OrderBy(g => FriendlyCategory(ActiveCategories[g.Key])).Select(g => $"{FriendlyCategory(ActiveCategories[g.Key])}: {g.Value:n0} points")));
+            string.Join(", ", goals.OrderBy(g => ActiveCategories[g.Key].Name).Select(g => $"{ActiveCategories[g.Key].Name}: {g.Value:n0} points")));
         plan = new(records, journal?.Attributes ?? new(), result, journal?.Properties, staged, journal?.Database);
         reason = ""; return true;
     }
@@ -204,7 +204,7 @@ public static partial class CollectionJournalState
             foreach (var goal in goals.OrderBy(g => g.Key))
             {
                 if (!totals.ContainsKey(CategoryKey(ActiveCategories[goal.Key])))
-                { reason = $"{FriendlyCategory(ActiveCategories[goal.Key])} is not initialized in this save; nothing was changed."; return false; }
+                { reason = $"{ActiveCategories[goal.Key].Name} is not initialized in this save; nothing was changed."; return false; }
                 while (PointsFor(goal.Key) < goal.Value)
                 {
                     bool added = false;
@@ -220,7 +220,7 @@ public static partial class CollectionJournalState
                         }
                     }
                     if (!added || --budget < 0)
-                    { reason = $"{FriendlyCategory(ActiveCategories[goal.Key])} cannot safely reach {goal.Value:n0} points with this save's supported challenges. Nothing was changed."; return false; }
+                    { reason = $"{ActiveCategories[goal.Key].Name} cannot safely reach {goal.Value:n0} points with this save's supported challenges. Nothing was changed."; return false; }
                 }
             }
             // Repair native progress for already-owned/earned selections as well.

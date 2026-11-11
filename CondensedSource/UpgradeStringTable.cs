@@ -91,13 +91,16 @@ internal sealed class UpgradeStringTable
             bool hashed = key.StartsWith('#') && key.Length == 9 && uint.TryParse(key.AsSpan(1), System.Globalization.NumberStyles.HexNumber,
                 System.Globalization.CultureInfo.InvariantCulture, out id);
             if (!hashed) id = Hash(key);
-            string name = hashed && blocks.Count > 1 && blocks[1].Values.TryGetValue(id, out var oldName) ? oldName : key;
-            if (blocks.Count > 1 && hashed && !blocks[1].Values.ContainsKey(id))
+            string? oldName = null;
+            bool hasStoredName = blocks.Count > 1 && blocks[1].Values.TryGetValue(id, out oldName);
+            string name = hashed && hasStoredName ? oldName! : key;
+            bool existingHashOnly = hashed && blocks[0].Values.ContainsKey(id) && !hasStoredName;
+            if (blocks.Count > 1 && hashed && !hasStoredName && !existingHashOnly)
                 throw new InvalidDataException("Use a key name for new entries in this table, rather than a hash: " + key);
             if (blocks.Count > 1 && blocks[1].Values.TryGetValue(id, out var existing) && existing != name)
                 throw new InvalidDataException("A string key collides with an existing key: " + key);
             if (!texts.TryAdd(id, text)) throw new InvalidDataException("Two string keys have the same hash: " + key);
-            names.Add(id, name);
+            if (!existingHashOnly) names.Add(id, name);
         }
         if (texts.Count == Values.Count && texts.All(p => Values.TryGetValue(p.Key, out var text) && text == p.Value))
             return raw.ToArray();
