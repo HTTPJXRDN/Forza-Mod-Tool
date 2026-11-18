@@ -1,3 +1,10 @@
+# Forza Mod Tool v1.3.0.7
+
+- Fixed Shuto Charge and Edo Circuit showing as read-only in the FH6 Collection Journal.
+- Finish and win entries sync local career results. The two Rivals entries update Journal progress without writing lap times.
+- Merge updated DB carries over quad-turbo mass and weight-distribution columns, including their required zero defaults. Rebuilt quad-turbo tables can match rows by unique integer ID.
+- Update merges keep front and rear tire-width parts that new factory presets still need.
+
 # Forza Mod Tool v1.3.0.6
 
 - Fixed FH6 Collection Journal entries all showing under Drift Attack.

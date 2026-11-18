@@ -1,13 +1,32 @@
 #if PROFILE_UNLOCK_TESTING
 namespace FH6LocalCryptoTool;
 
-// Installed CareerRaceDataSet, RaceCollectionDataSet and TrackInfoDataSet,
-// 2026-10-15. Exact stat-route / designed-collection links for 174 Journal
-// challenges; 336 race definitions were checked to exclude seasonal reuse.
-// No name matching, inferred route hashes or online/Rivals result writes.
+// Checked against the installed CareerRaceDataSet, RaceCollectionDataSet and
+// TrackInfoDataSet. Match campaign exhibitions by collection and route so
+// seasonal races sharing a route are excluded.
 internal static class JournalRaceCatalog
 {
     internal sealed record Mapping(ulong Challenge, uint Track, uint Route, uint Race, uint Collection, string Mode, bool Win);
+    sealed record AddedChallenge(ulong Id, ulong LinkedId, uint Version, ulong Category, int Points, ulong Objective, string Stat, Mapping? Race = null);
+
+    // Shuto Charge and Edo Circuit were added after the embedded Journal catalog.
+    // Their Rivals objectives use the existing Journal-only completion path.
+    static readonly IReadOnlyDictionary<ulong, AddedChallenge> AddedChallenges = new AddedChallenge[]
+    {
+        new(0x9A8842B20993E82BUL, 0x05DFC6A579AD422DUL, 0, 0x9D01054BC457E43AUL, 250, 0x6FEE70CF14594299UL,
+            "Race/CompletedDesignedExhibition.RaceCollectionId.117.Track.820", new(0x9A8842B20993E82BUL, 820, 4281, 117, 117, "Standard", false)),
+        new(0xC4769463EF77B21AUL, 0xBECDD731925AF00BUL, 1, 0x9D01054BC457E43AUL, 100, 0x5AA61C01CFAA85C3UL,
+            "Race/WonDesignedExhibition.RaceCollectionId.117.Track.820", new(0xC4769463EF77B21AUL, 820, 4281, 117, 117, "Standard", true)),
+        new(0xB872EB199466CBE1UL, 0x92F0D84933643E29UL, 1, 0xF94B3C553968B8F3UL, 250, 0x54B57B48DC33E668UL,
+            "Race/CompletedWithOverride.OverrideType.CampaignEvent.RouteId.6281.Track.820", new(0xB872EB199466CBE1UL, 820, 6281, 44, 44, "CampaignEvent", false)),
+        new(0x3AF6F37CEEB5CD15UL, 0x67096D8D4B5B98E1UL, 1, 0xF94B3C553968B8F3UL, 100, 0x6B8D35AE71475741UL,
+            "Race/WinsWithOverride.OverrideType.CampaignEvent.RouteId.6281.Track.820", new(0x3AF6F37CEEB5CD15UL, 820, 6281, 44, 44, "CampaignEvent", true)),
+        new(0x18DD09257711AA31UL, 0xDA6A514C343FC362UL, 0, 0xFBEB5BEAC88960B9UL, 50, 0x9286213827647DFDUL,
+            "Races/Rivals/LapsSubmitted.GhostCarClass.*.CleanLap.true.RouteID.4281.Track.820"),
+        new(0xCEBF159D69D922DFUL, 0xBFE26C62E74159E2UL, 0, 0x3387A81CA1468F4EUL, 50, 0x30AF453BD38DDD34UL,
+            "Races/Rivals/LapsSubmitted.GhostCarClass.*.CleanLap.true.RouteID.6281.Track.820"),
+    }.ToDictionary(c => c.Id);
+
     internal static IReadOnlyList<Mapping> Items { get; } = Array.AsReadOnly(new Mapping[]
     {
         new(0x013524C9CFF36063UL, 820, 301, 69, 69, "CampaignEvent", true),
@@ -184,8 +203,15 @@ internal static class JournalRaceCatalog
         new(0xF85972B67C6A1BE0UL, 820, 2201, 30, 30, "CampaignEvent", true),
         new(0xF871B2F977960F0CUL, 820, 141, 23, 23, "CampaignEvent", false),
         new(0xFFEF2D08FDBBAFEFUL, 820, 1041, 82, 82, "CampaignEvent", false),
-    });
+    }.Concat(AddedChallenges.Values.Select(c => c.Race).OfType<Mapping>()).ToArray());
     internal static readonly IReadOnlyDictionary<ulong, Mapping> ByChallenge = Items.ToDictionary(m => m.Challenge);
+
+    internal static bool MatchesAddedChallenge(CollectionJournalCatalog.Challenge challenge) =>
+        AddedChallenges.TryGetValue(challenge.Id, out var known)
+        && challenge.LinkedId == known.LinkedId && challenge.Version == known.Version
+        && challenge.Category == known.Category && challenge.Points == known.Points
+        && challenge.Objectives is [{ Kind: "SimpleStatObjective", Target: 1, GlobalDependency: false, Dependencies: [], Stats: [var stat] } objective]
+        && objective.Id == known.Objective && stat == known.Stat;
 }
 #endif
 

@@ -383,14 +383,15 @@ public static partial class CollectionJournalState
 
     // Existing native sync maps are valid only for the definition they were
     // verified against. New boolean and category-dependency objectives use the
-    // known serializer; new race/PB/world mechanics remain visible read-only.
+    // known serializer. New race entries need a verified definition and mapping.
     static bool SupportsDefinition(CollectionJournalCatalog.Challenge c)
     {
         if (c.Category == PromoPhotoProgressState.CategoryId && c.PromoCarOrdinal <= 0) return false;
         if (c.Category == GarageCollectionJournalState.CategoryId && c.Objectives.Any(o => o.Kind == "CarCollectionObjective") && c.CollectionCarOrdinal <= 0) return false;
         if (ProfileGameData.Current?.Journal == null) return true;
         if (!Definitions.TryGetValue(c.Id, out var known))
-            return c.Objectives.All(o => o.Kind is "CarCollectionObjective" or "TakePhotoObjective")
+            return JournalRaceCatalog.MatchesAddedChallenge(c)
+                || c.Objectives.All(o => o.Kind is "CarCollectionObjective" or "TakePhotoObjective")
                 || Automatic(c) && c.Objectives.All(o => o.Dependencies.All(ActiveCategories.ContainsKey));
         return c.LinkedId == known.LinkedId && c.Version == known.Version && c.Category == known.Category
             && c.Points == known.Points && c.PromoCarOrdinal == known.PromoCarOrdinal && c.CollectionCarOrdinal == known.CollectionCarOrdinal && c.Objectives.Length == known.Objectives.Length

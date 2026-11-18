@@ -84,7 +84,9 @@ public static class UpdateDbMerge
                     throw new InvalidDataException("The merged DB failed SQLite quick_check.");
                 var result = ForeignKeyCounts(db);
                 using var updated = Read(preview.UpdatedPath); using var modded = Read(preview.ModdedPath);
-                var original = ForeignKeyCounts(updated); var donor = ForeignKeyCounts(modded);
+                var original = ForeignKeyCounts(updated);
+                var donor = preview.Delta.Any(t => t.QuadTurbo?.MissingKey == true)
+                    ? ForeignKeyCountsWithQuadTurboKey(modded) : ForeignKeyCounts(modded);
                 // Donor-added rows may use a looser schema than the official clean DB.
                 var excess = result.Where(r => r.Value > original.GetValueOrDefault(r.Key) + donor.GetValueOrDefault(r.Key) +
                     preview.AddedByTable.GetValueOrDefault(r.Key.ChildTable)).ToArray();
@@ -117,6 +119,17 @@ public static class UpdateDbMerge
         return result;
     }
     private sealed record ForeignKeyIdentity(string ChildTable, string ParentTable, string Columns);
+
+    private static Dictionary<ForeignKeyIdentity, int> ForeignKeyCountsWithQuadTurboKey(SqliteConnection donor)
+    {
+        // Other tables may reference the donor's Id even after the mod rebuilt
+        // it without a declared key. Validate those references on a private copy.
+        using var copy = new SqliteConnection("Data Source=:memory:");
+        copy.Open();
+        donor.BackupDatabase(copy);
+        GameDbDelta.Exec(copy, $"CREATE UNIQUE INDEX temp_quad_turbo_merge_id ON [{QuadTurboMerge.Table}](Id)");
+        return ForeignKeyCounts(copy);
+    }
 
     private static Dictionary<ForeignKeyIdentity, int> ForeignKeyCounts(SqliteConnection db)
     {
